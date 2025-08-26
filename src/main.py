@@ -1,13 +1,14 @@
-# src/main.py
+# src/main.py (テスト実行用)
 
-import config
-import pipeline # pipeline.pyをインポート
+from src import config
+from src import pipeline
+import pandas as pd
 
 def main():
     """
-    パイプライン処理全体を実行するメイン関数
+    パイプライン処理のテスト実行用メイン関数 (10件のみ処理)
     """
-    print("🚀 パイプライン処理を開始します...")
+    print("🚀 [テストモード] パイプライン処理を開始します...")
 
     # フェーズ1: 車種マスターリストの生成
     print("⚙️ フェーズ1: 車種マスターリストを生成中...")
@@ -17,35 +18,36 @@ def main():
         print("❌ フェーズ1でデータが生成されなかったため、処理を中断します。")
         return
 
+    # DataFrameのヘッダー行（「メーカー」など）を除外する
+    # この処理は pipeline.py に移動済みですが、念のためここでも確認
+    if not vehicle_master_df.empty and vehicle_master_df.iloc[0]['maker'] == 'メーカー':
+         vehicle_master_df = vehicle_master_df.iloc[1:].copy()
+
     print(f"✅ フェーズ1完了: {len(vehicle_master_df)}件のユニークな車種情報を抽出しました。")
+    print("--- 抽出結果（最初の5件）---")
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', 1000)
+    print(vehicle_master_df.head(5))
+    print("--------------------")
 
-    # フェーズ2: データ収集・拡充 (Enrichment)
+    # テスト用に先頭10件のみを処理対象とする
+    test_df = vehicle_master_df.head(10)
+    print(f"\n[テストモード] 先頭{len(test_df)}件のデータのみを処理します。")
+
+    # フェーズ2: データ収集・拡充
     print("\n🤖 フェーズ2: データを収集中...")
-    enriched_df = pipeline.run_phase2_enrich_data(vehicle_master_df)
-    print(f"✅ フェーズ2完了: データ拡充が完了しました。")
-    print("拡充結果（最初の5件）:")
-    print(enriched_df.head())
+    enriched_df = pipeline.run_phase2_enrich_data(test_df)
+    
+    # フェーズ3: 価値計算 (現在は何もしない)
+    final_df = enriched_df
 
-
-    # フェーズ3: 価値計算
-    print("\n💸 フェーズ3: 価値を計算中...")
-    # TODO: enriched_df を使って価値計算ロジックを実装
-    final_df = enriched_df # 現時点ではフェーズ2の結果を最終結果とする
-
-
-    # ▼▼▼ この部分でCSVファイルに書き出します ▼▼▼
+    # CSVファイルに保存
     try:
-        # final_df をCSVファイルとして保存
-        # index=False: DataFrameのインデックス(0,1,2...)をCSVに含めない設定
-        # encoding='utf-8-sig': Excelで開いた際の文字化けを防ぐ設定
         final_df.to_csv(config.VEHICLE_VALUE_LIST_PATH, index=False, encoding='utf-8-sig')
-        
-        print(f"\n✅ パイプライン処理が完了し、結果をファイルに保存しました。")
+        print(f"\n✅ テスト処理が完了し、結果をファイルに保存しました。")
         print(f"出力ファイル: {config.VEHICLE_VALUE_LIST_PATH}")
-
     except Exception as e:
         print(f"❌ ファイルの保存中にエラーが発生しました: {e}")
-
 
 if __name__ == "__main__":
     main()

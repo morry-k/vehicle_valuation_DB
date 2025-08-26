@@ -2,10 +2,10 @@
 
 import pandas as pd
 from pathlib import Path
-import config
-# "src." をつけない相対インポート
-from data_processing.pdf_parser import extract_vehicles_from_pdf
-from data_processing.scraper import enrich_vehicle_data # ← この行も追加
+# 変更後
+from src import config
+from src.data_processing.pdf_parser import extract_vehicles_from_pdf
+from src.data_processing.scraper import enrich_vehicle_data
 
 def run_phase1_generate_master_list() -> pd.DataFrame:
     """

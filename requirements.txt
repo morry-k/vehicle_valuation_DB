@@ -1,2 +1,5 @@
+# requirements.txt
 pandas
 pdfplumber
+google-generativeai
+python-dotenv

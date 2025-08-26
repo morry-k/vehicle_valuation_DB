@@ -7,14 +7,13 @@ from typing import List, Dict
 # PDFのテーブルの列の境界線 (左端と右端のx座標)
 # ※この座標は実際のPDFに合わせて調整する必要があります
 COLUMN_BOUNDARIES = {
-    "auction_no": (30, 80),
-    "maker": (80, 130),
-    "car_name": (130, 200),
+    "auction_no": (15, 43),
+    "maker": (43, 80),
+    "car_name": (80, 200),
     "grade": (200, 300),
-    "year": (320, 360),
-    "model_code": (400, 480),
-    "mileage_km": (480, 530),
-    # 他に必要な列があればここに追加
+    "year": (300, 352),
+    "model_code": (352, 400),
+    "mileage_km": (400, 456),
 }
 
 def extract_vehicles_from_pdf(pdf_path: str) -> List[Dict]:
