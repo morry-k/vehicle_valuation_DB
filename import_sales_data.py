@@ -15,11 +15,12 @@ def import_data():
         df = pd.read_csv(INPUT_CSV_PATH, sep=',', encoding='cp932')
         print(f"--- {len(df)}件のデータをCSVから読み込みました ---")
 
+        # 列名を日本語から英語に変換
         df.rename(columns={
             '引渡報告日': 'sale_date',
             '車台番号': 'chassis_number',
             '型式': 'model_code',
-            '車名': 'car_name',
+            '車名': 'maker', # ← 'car_name' から 'maker' に変更
             '引渡先事業者／事業所名称': 'buyer_name',
             '引渡先事業所所在地': 'buyer_location'
         }, inplace=True)

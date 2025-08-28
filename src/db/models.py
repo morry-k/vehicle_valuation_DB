@@ -4,12 +4,11 @@ from sqlmodel import SQLModel, Field
 from typing import Optional
 from datetime import date, datetime
 
-# 車種マスターリスト用のテーブルモデル
 class VehicleMaster(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     maker: str = Field(index=True)
-    car_name: str = Field(index=True)
-    model_code: str = Field(index=True, unique=True) # 型式はユニークキー
+    car_name: Optional[str] = Field(default=None, index=True) # ▼▼▼ この行を修正 ▼▼▼
+    model_code: str = Field(index=True, unique=True)
     
     appearance_count: int = Field(default=0)
     year: Optional[str] = None
@@ -21,12 +20,14 @@ class VehicleMaster(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
+    
 class SalesHistory(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     sale_date: date = Field(index=True)
     chassis_number: str = Field(unique=True, index=True)
     model_code: str = Field(index=True)
-    car_name: str
+    maker: str = Field(index=True) # ▼▼▼ この行を追加 ▼▼▼
+    car_name: Optional[str] = None # car_nameは必須ではなくする
     buyer_name: str
-    buyer_location: Optional[str] = None # ▼▼▼ この行を追加 ▼▼▼
+    buyer_location: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
