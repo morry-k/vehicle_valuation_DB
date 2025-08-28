@@ -9,20 +9,21 @@ class VehicleMaster(SQLModel, table=True):
     maker: Optional[str] = Field(default=None, index=True)
     car_name: Optional[str] = Field(default=None, index=True)
     model_code: str = Field(index=True, unique=True)
+    
     appearance_count: int = Field(default=0)
     year: Optional[str] = None
     grade: Optional[str] = None
+    
+    # --- AIによる拡充データ ---
     engine_model: Optional[str] = Field(default=None, index=True)
-
-    # ▼▼▼ 重量の内訳を記録する列を追加 ▼▼▼
-    total_weight_kg: Optional[int] = None # 総重量
-    engine_weight_kg: Optional[int] = None # e/g重量
-    kouzan_weight_kg: Optional[int] = None # 甲山重量
-    wiring_weight_kg: Optional[int] = None # 配線重量
-    press_weight_kg: Optional[int] = None  # プレス重量
-
+    drive_type: Optional[str] = Field(default=None, index=True)
+    body_type: Optional[str] = Field(default=None, index=True)
+    total_weight_kg: Optional[int] = None
+    engine_weight_kg: Optional[int] = None
+    
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
 
 # ▼▼▼ このモデル定義をファイル末尾に追加 ▼▼▼
 class ComponentValue(SQLModel, table=True):

@@ -33,25 +33,20 @@ def run_phase1_extract_all_vehicles() -> pd.DataFrame:
     df = pd.DataFrame(all_vehicles)
     df = df[df['maker'] != 'メーカー'].copy()
     
-    if 'model_code' in df.columns:
-        df['model_code'] = df['model_code'].apply(normalize_text)
+    # ▼▼▼ maker, car_name, model_code の3つすべてを正規化 ▼▼▼
+    for col in ['maker', 'car_name', 'model_code']:
+        if col in df.columns:
+            df[col] = df[col].apply(normalize_text)
 
     return df
 
 def run_phase2_enrich_data(master_df: pd.DataFrame) -> pd.DataFrame:
     """
-    フェーズ2 (模擬): AI処理をスキップし、受け取ったデータをそのまま返す
+    フェーズ2: AIを使って車種マスターリストのデータを拡充する
     """
-    print("  - [スキップ] AIによるデータ拡充処理をスキップします。")
-    
-    master_df['total_weight_kg'] = None
-    master_df['engine_model'] = None
-    master_df['engine_weight_kg'] = None
-    master_df['kouzan_weight_kg'] = None
-    master_df['wiring_weight_kg'] = None
-    master_df['press_weight_kg'] = None
-    
-    return master_df
+    # scraper.pyに定義された、AIを呼び出す関数を実行する
+    enriched_df = enrich_vehicle_data(master_df)
+    return enriched_df
 
 def run_phase3_update_database(all_vehicles_df: pd.DataFrame, enriched_df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -62,49 +57,52 @@ def run_phase3_update_database(all_vehicles_df: pd.DataFrame, enriched_df: pd.Da
     session = SessionLocal()
 
     try:
+        # 1. 既存の車種マスターを辞書として一度に読み込む
         existing_vehicles = {v.model_code: v for v in session.query(VehicleMaster).all()}
         print(f"  - 既存の車種マスター（{len(existing_vehicles)}件）を読み込みました。")
 
+        # 2. 今回のPDFから更新・追加すべきデータを準備
         key_cols = ['maker', 'car_name', 'model_code']
         appearance_counts = all_vehicles_df.groupby(key_cols).size().reset_index(name='new_appearance_count')
-        update_data = pd.merge(enriched_df, appearance_counts, on=key_cols, how="left")
+        update_data_from_pdf = pd.merge(enriched_df, appearance_counts, on=key_cols, how="left")
 
-        for record in update_data.to_dict('records'):
+        # 3. メモリ上でPDF由来のデータを更新・追加
+        for record in update_data_from_pdf.to_dict('records'):
             model_code = record.get('model_code')
             if not model_code: continue
             
             vehicle = existing_vehicles.get(model_code)
             if vehicle:
-                vehicle.appearance_count += record.get('new_appearance_count', 0)
-                vehicle.year, vehicle.grade = record.get('year'), record.get('grade')
-                vehicle.total_weight_kg = record.get('total_weight_kg')
-                vehicle.engine_model = record.get('engine_model')
+                vehicle.appearance_count += int(record.get('new_appearance_count', 0))
+                for col in ['year', 'grade', 'engine_model', 'drive_type', 'body_type', 'total_weight_kg', 'engine_weight_kg']:
+                    if pd.notna(record.get(col)):
+                        setattr(vehicle, col, record.get(col))
                 vehicle.updated_at = datetime.utcnow()
             else:
-                vehicle = VehicleMaster(**record)
-                vehicle.appearance_count = record.get('new_appearance_count', 0)
-            
+                vehicle = VehicleMaster(**{k: v for k, v in record.items() if k in VehicleMaster.__fields__})
+                vehicle.appearance_count = int(record.get('new_appearance_count', 0))
+                existing_vehicles[model_code] = vehicle # ★★★ メモリ上の辞書を更新
             session.add(vehicle)
 
-        master_codes_in_db = {v.model_code for v in session.query(VehicleMaster.model_code).all()}
+        # 4. メモリ上で落札実績のみのデータを追加
         sales_only_query = session.query(
             SalesHistory.maker, SalesHistory.car_name, SalesHistory.model_code
-        ).distinct().filter(SalesHistory.model_code.notin_(master_codes_in_db))
+        ).distinct()
         
         for sale in sales_only_query.all():
-            if sale.model_code not in existing_vehicles:
+            if sale.model_code not in existing_vehicles: # メモリ上の辞書で重複チェック
                 vehicle = VehicleMaster(
-                    maker=sale.maker, car_name=sale.car_name, model_code=sale.model_code,
-                    appearance_count=0
+                    maker=sale.maker, car_name=sale.car_name, model_code=sale.model_code, appearance_count=0
                 )
                 session.add(vehicle)
-        
+                existing_vehicles[sale.model_code] = vehicle # ★★★ メモリ上の辞書を更新
+
+        # 5. すべての変更を一度にDBに書き込む
         session.commit()
         print("  - 車種マスターの更新が完了しました。")
 
-        sales_counts_df = pd.read_sql(
-            "SELECT model_code, COUNT(id) as sales_count FROM saleshistory GROUP BY model_code", engine
-        )
+        # 6. 最終的な結果を生成
+        sales_counts_df = pd.read_sql("SELECT model_code, COUNT(id) as sales_count FROM saleshistory GROUP BY model_code", engine)
         final_master_df = pd.read_sql("SELECT * FROM vehiclemaster", engine)
         final_output_df = pd.merge(final_master_df, sales_counts_df, on='model_code', how='left')
         final_output_df['sales_count'] = final_output_df['sales_count'].fillna(0).astype(int)
