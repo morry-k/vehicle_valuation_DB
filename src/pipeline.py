@@ -44,47 +44,51 @@ def run_phase2_enrich_data(master_df: pd.DataFrame) -> pd.DataFrame:
     enriched_df = enrich_vehicle_data(master_df)
     return enriched_df
 
-def run_phase3_calculate_value(all_vehicles_df: pd.DataFrame) -> pd.DataFrame:
+# src/pipeline.py の run_phase3_calculate_value 関数
+
+def run_phase3_calculate_value(all_vehicles_df: pd.DataFrame, enriched_df: pd.DataFrame) -> pd.DataFrame:
     """
-    フェーズ3: PDFから抽出した全車両データを集計し、既存DBを更新する
+    フェーズ3: 新しい車両データと既存のDBをマージし、出現回数を更新する
     """
     print("  - 既存データベースの読み込みと更新を開始します...")
     
+    key_cols = ['maker', 'car_name', 'model_code']
+    db_cols = key_cols + ['appearance_count', 'year', 'grade', 'weight_kg', 'engine_model', 'catalyst_model']
+
     # --- 1. 既存DBを読み込む ---
     try:
         existing_db = pd.read_csv(config.VEHICLE_VALUE_LIST_PATH)
         print(f"  - 既存のデータベース（{len(existing_db)}件）を読み込みました。")
     except FileNotFoundError:
-        required_cols = ['maker', 'car_name', 'model_code', 'appearance_count', 'year', 'grade']
-        existing_db = pd.DataFrame(columns=required_cols)
+        existing_db = pd.DataFrame(columns=db_cols)
         print("  - 既存のデータベースが見つからないため、新規に作成します。")
 
     # --- 2. 今回抽出した全車両リストから、出現回数を計算 ---
-    key_cols = ['maker', 'car_name', 'model_code']
-    if not all(col in all_vehicles_df.columns for col in key_cols):
-        print(f"エラー: 必要なキー列 {key_cols} が抽出データにありません。")
-        return existing_db # エラーの場合は既存DBをそのまま返す
-
     appearance_counts = all_vehicles_df.groupby(key_cols).size().reset_index(name='new_appearance_count')
 
-    # --- 3. 今回抽出したユニークな車種情報と出現回数を結合 ---
-    unique_new_vehicles = all_vehicles_df.drop_duplicates(subset=key_cols)
-    merged_new_data = pd.merge(unique_new_vehicles, appearance_counts, on=key_cols)
+    # --- 3. スペック情報（拡充済みデータ）と出現回数データを結合 ---
+    # enriched_dfには既にユニークな車種のスペック情報が入っている
+    merged_new_data = pd.merge(enriched_df, appearance_counts, on=key_cols, how="left")
 
     # --- 4. 既存DBと新しいデータをマージ ---
     final_db = pd.merge(existing_db, merged_new_data, on=key_cols, how='outer', suffixes=('_old', '_new'))
 
     # --- 5. 出現回数を更新し、列を整理 ---
-    final_db['appearance_count'] = final_db['appearance_count'].fillna(0) + final_db['new_appearance_count'].fillna(0)
+    if 'appearance_count_old' not in final_db.columns:
+        final_db['appearance_count_old'] = 0
+    if 'new_appearance_count' not in final_db.columns:
+        final_db['new_appearance_count'] = 0
+    
+    final_db['appearance_count'] = final_db['appearance_count_old'].fillna(0) + final_db['new_appearance_count'].fillna(0)
     final_db['appearance_count'] = final_db['appearance_count'].astype(int)
     
     # 新しいデータにしかなかった行のために、他の列の値を更新
-    for col in ['year', 'grade', 'auction_no', 'mileage_km']: # PDFから取得する他の列
+    for col in ['year', 'grade', 'weight_kg', 'engine_model', 'catalyst_model']:
         if f'{col}_new' in final_db.columns and f'{col}_old' in final_db.columns:
             final_db[col] = final_db[f'{col}_new'].fillna(final_db[f'{col}_old'])
 
     # 最終的に必要な列だけを選択して整理
-    final_columns = [col for col in required_cols if col in final_db.columns]
+    final_columns = [col for col in db_cols if col in final_db.columns]
     final_db = final_db[final_columns]
 
     print("  - データベースの更新が完了しました。")
