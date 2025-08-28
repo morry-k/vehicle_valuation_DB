@@ -2,14 +2,18 @@
 
 from pathlib import Path
 
-# プロジェクトのルートディレクトリを取得
-# このファイル (config.py) の親 (src) の親 (vehicle_value_pipeline)
+# プロジェクトのルートディレクトリ
 ROOT_DIR = Path(__file__).parent.parent
 
-# データディレクトリのパスを定義
+# データディレクトリ
 DATA_DIR = ROOT_DIR / "data"
 INPUT_DIR = DATA_DIR / "input"
 OUTPUT_DIR = DATA_DIR / "output"
+
+# ★★★ この行を追加 ▼▼▼
+# データベースファイルのパスを定義
+DB_PATH = DATA_DIR / "vehicle_database.db"
+# ★★★ ここまで追加 ▲▲▲
 
 # インプットファイルのパス
 AUCTION_SHEETS_DIR = INPUT_DIR / "auction_sheets"

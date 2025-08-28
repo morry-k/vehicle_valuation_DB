@@ -3,3 +3,4 @@ pandas
 pdfplumber
 google-generativeai
 python-dotenv
+sqlmodel
