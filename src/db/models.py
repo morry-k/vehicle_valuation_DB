@@ -12,11 +12,17 @@ class VehicleMaster(SQLModel, table=True):
     appearance_count: int = Field(default=0)
     year: Optional[str] = None
     grade: Optional[str] = None
-    weight_kg: Optional[int] = None
     engine_model: Optional[str] = Field(default=None, index=True)
+
+    # ▼▼▼ 重量の内訳を記録する列を追加 ▼▼▼
+    total_weight_kg: Optional[int] = None # 総重量
+    engine_weight_kg: Optional[int] = None # e/g重量
+    kouzan_weight_kg: Optional[int] = None # 甲山重量
+    wiring_weight_kg: Optional[int] = None # 配線重量
+    press_weight_kg: Optional[int] = None  # プレス重量
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-
 
 # ▼▼▼ このモデル定義をファイル末尾に追加 ▼▼▼
 class ComponentValue(SQLModel, table=True):
@@ -43,3 +49,4 @@ class SalesHistory(SQLModel, table=True):
     buyer_name: str
     buyer_location: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+

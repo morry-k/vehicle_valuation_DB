@@ -1,17 +1,17 @@
-# src/pipeline.py
-
 import pandas as pd
-from pathlib import Path
-# 変更後
+from datetime import datetime
 from src import config
+from src.db.database import SessionLocal, engine
+from src.db.models import VehicleMaster, SalesHistory, SQLModel
 from src.data_processing.pdf_parser import extract_vehicles_from_pdf
 from src.data_processing.scraper import enrich_vehicle_data
+from src.utils import normalize_text
 
 def run_phase1_extract_all_vehicles() -> pd.DataFrame:
     """
-    フェーズ1: inputフォルダ内の全PDFを解析し、ユニークな車種マスターリストを作成する
+    フェーズ1: inputフォルダ内の全PDFを解析し、「重複を含む」全車両データを返す
     """
-    all_vehicles = []
+    all_vehicles = [] # ← ★★★ 本来ここにあるべき変数の初期化 ★★★
     
     pdf_files = list(config.AUCTION_SHEETS_DIR.glob("*.pdf"))
     
@@ -33,31 +33,25 @@ def run_phase1_extract_all_vehicles() -> pd.DataFrame:
     df = pd.DataFrame(all_vehicles)
     df = df[df['maker'] != 'メーカー'].copy()
     
-    # drop_duplicates を削除し、全データをそのまま返す
+    if 'model_code' in df.columns:
+        df['model_code'] = df['model_code'].apply(normalize_text)
+
     return df
 
-# ▼▼▼ この関数が不足していました ▼▼▼
 def run_phase2_enrich_data(master_df: pd.DataFrame) -> pd.DataFrame:
     """
-    フェーズ2 (模擬): AI処理と待機時間をスキップし、受け取ったデータをそのまま返す
+    フェーズ2 (模擬): AI処理をスキップし、受け取ったデータをそのまま返す
     """
     print("  - [スキップ] AIによるデータ拡充処理をスキップします。")
     
-    # AIで取得するはずだった列を、空の状態で追加しておく
-    # これにより、後のフェーズ3がエラーなく動作する
-    master_df['weight_kg'] = None
+    master_df['total_weight_kg'] = None
     master_df['engine_model'] = None
-    master_df['catalyst_model'] = None
+    master_df['engine_weight_kg'] = None
+    master_df['kouzan_weight_kg'] = None
+    master_df['wiring_weight_kg'] = None
+    master_df['press_weight_kg'] = None
     
     return master_df
-
-import pandas as pd
-from datetime import datetime
-from src import config
-from src.db.database import SessionLocal, engine
-from src.db.models import VehicleMaster, SalesHistory, SQLModel
-
-# ... (run_phase1 と run_phase2 は変更なし) ...
 
 def run_phase3_update_database(all_vehicles_df: pd.DataFrame, enriched_df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -68,53 +62,46 @@ def run_phase3_update_database(all_vehicles_df: pd.DataFrame, enriched_df: pd.Da
     session = SessionLocal()
 
     try:
-        # --- 1. 既存の車種マスターを辞書として一度に読み込む ---
-        existing_vehicles_db = {v.model_code: v for v in session.query(VehicleMaster).all()}
-        print(f"  - 既存の車種マスター（{len(existing_vehicles_db)}件）を読み込みました。")
+        existing_vehicles = {v.model_code: v for v in session.query(VehicleMaster).all()}
+        print(f"  - 既存の車種マスター（{len(existing_vehicles)}件）を読み込みました。")
 
-        # --- 2. 今回のPDFから更新・追加すべきデータを準備 ---
         key_cols = ['maker', 'car_name', 'model_code']
         appearance_counts = all_vehicles_df.groupby(key_cols).size().reset_index(name='new_appearance_count')
-        update_data_from_pdf = pd.merge(enriched_df, appearance_counts, on=key_cols, how="left")
+        update_data = pd.merge(enriched_df, appearance_counts, on=key_cols, how="left")
 
-        # --- 3. メモリ上で更新・追加処理を行う ---
-        # PDFからのデータで更新
-        for record in update_data_from_pdf.to_dict('records'):
+        for record in update_data.to_dict('records'):
             model_code = record.get('model_code')
             if not model_code: continue
             
-            vehicle = existing_vehicles_db.get(model_code)
-            if vehicle: # 存在すれば更新
+            vehicle = existing_vehicles.get(model_code)
+            if vehicle:
                 vehicle.appearance_count += record.get('new_appearance_count', 0)
                 vehicle.year, vehicle.grade = record.get('year'), record.get('grade')
-                vehicle.weight_kg, vehicle.engine_model = record.get('weight_kg'), record.get('engine_model')
+                vehicle.total_weight_kg = record.get('total_weight_kg')
+                vehicle.engine_model = record.get('engine_model')
                 vehicle.updated_at = datetime.utcnow()
-            else: # 存在しなければ新規作成
+            else:
                 vehicle = VehicleMaster(**record)
                 vehicle.appearance_count = record.get('new_appearance_count', 0)
-                existing_vehicles_db[model_code] = vehicle
             
             session.add(vehicle)
 
-        # --- 4. 落札実績にしか存在しない車種をメモリ上で追加 ---
+        master_codes_in_db = {v.model_code for v in session.query(VehicleMaster.model_code).all()}
         sales_only_query = session.query(
             SalesHistory.maker, SalesHistory.car_name, SalesHistory.model_code
-        ).distinct()
+        ).distinct().filter(SalesHistory.model_code.notin_(master_codes_in_db))
         
         for sale in sales_only_query.all():
-            if sale.model_code not in existing_vehicles_db: # メモリ上の辞書に存在しないかチェック
+            if sale.model_code not in existing_vehicles:
                 vehicle = VehicleMaster(
                     maker=sale.maker, car_name=sale.car_name, model_code=sale.model_code,
                     appearance_count=0
                 )
                 session.add(vehicle)
-                existing_vehicles_db[sale.model_code] = vehicle # 辞書にも追加
-
-        # --- 5. すべての変更を一度にDBに書き込む ---
+        
         session.commit()
         print("  - 車種マスターの更新が完了しました。")
 
-        # --- 6. 最終的な結果を生成 ---
         sales_counts_df = pd.read_sql(
             "SELECT model_code, COUNT(id) as sales_count FROM saleshistory GROUP BY model_code", engine
         )

@@ -1,4 +1,4 @@
-# src/main.py
+# src/main.py の main 関数
 
 from src import config
 from src import pipeline
@@ -17,9 +17,11 @@ def main():
     
     # --- フェーズ2 ---
     print("\n🤖 フェーズ2: AI処理をスキップします...")
-    unique_vehicles_df = all_vehicles_df.drop_duplicates(subset=['maker', 'car_name', 'model_code'])
-
-    # ▼▼▼ .head() の制限を解除し、全件を処理対象とします ▼▼▼
+    
+    # ▼▼▼ ここの drop_duplicates の基準を model_code のみに変更 ▼▼▼
+    unique_vehicles_df = all_vehicles_df.drop_duplicates(subset=['model_code'])
+    
+    # AIをスキップする模擬関数を呼び出す
     enriched_df = pipeline.run_phase2_enrich_data(unique_vehicles_df.copy())
 
     # --- フェーズ3 ---

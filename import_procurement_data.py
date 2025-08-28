@@ -1,9 +1,10 @@
 import pandas as pd
 from pathlib import Path
 from src.db.database import engine, SessionLocal
-from src.db.models import SalesHistory, SQLModel # ★ SalesHistoryモデルを正しく使う
+from src.db.models import VehicleMaster, SQLModel
+from src.utils import normalize_text # ▼▼▼ 1. ユーティリティから正規化関数をインポート ▼▼▼
 
-# ★ インプットとなる「仕入れ実績」ファイルへのパス
+# ★★★ インプットとなる仕入れ実績ファイルへのパス ★★★
 INPUT_CSV_PATH = Path(__file__).parent / "data" / "input" / "procurement_records" / "procurement_2025_06.csv"
 
 def import_procurement_data():
@@ -13,43 +14,47 @@ def import_procurement_data():
 
     try:
         df = pd.read_csv(INPUT_CSV_PATH, sep=',', encoding='cp932')
-        
-        df.rename(columns={
-            '引渡報告日': 'sale_date',
-            '車台番号': 'chassis_number',
-            '型式': 'model_code',
-            '車名': 'maker',
-            '引渡先事業者／事業所名称': 'buyer_name',
-            '引渡先事業所所在地': 'buyer_location'
-        }, inplace=True)
+        df.rename(columns={'型式': 'model_code', '車名': 'maker'}, inplace=True)
 
-        if 'chassis_number' not in df.columns:
-            print("エラー: CSVに'車台番号'列が見つかりません。")
+        if 'model_code' not in df.columns:
+            print("エラー: CSVに'型式'列が見つかりません。")
             return
             
-        # データをクリーニング
+        # 型式のクリーニング
         df['model_code'] = df['model_code'].str.split('-').str[-1].str.strip()
-        df['chassis_number'] = df['chassis_number'].str.strip()
-        df['sale_date'] = pd.to_datetime(df['sale_date']).dt.date
-        df.dropna(subset=['chassis_number'], inplace=True) # 車台番号がない行は除外
+        
+        # ▼▼▼ 2. 正規化関数を適用する行を追加 ▼▼▼
+        df['model_code'] = df['model_code'].apply(normalize_text)
 
+        df.dropna(subset=['model_code'], inplace=True)
+        df.drop_duplicates(subset=['model_code'], inplace=True)
+
+        existing_codes_query = session.query(VehicleMaster.model_code).all()
+        existing_codes = {code for (code,) in existing_codes_query}
+        print(f"データベースに既に存在するユニークな型式: {len(existing_codes)}件")
+
+        new_vehicles_df = df[~df['model_code'].isin(existing_codes)]
+        
         imported_count = 0
-        skipped_count = 0
-        
-        # ★ SalesHistoryテーブルにデータを登録するループ
-        for record in df.to_dict('records'):
-            exists = session.query(SalesHistory).filter_by(chassis_number=record['chassis_number']).first()
-            if not exists:
-                new_record = SalesHistory(**record)
+        if not new_vehicles_df.empty:
+            print(f"車種辞書への新規追加対象: {len(new_vehicles_df)}件")
+            
+            for record in new_vehicles_df.to_dict('records'):
+                new_record = VehicleMaster(
+                    model_code=record['model_code'],
+                    maker=record.get('maker'),
+                    appearance_count=0
+                )
                 session.add(new_record)
-                imported_count += 1
-            else:
-                skipped_count += 1
+            
+            session.commit()
+            imported_count = len(new_vehicles_df)
+
+        skipped_count = len(df) - imported_count
         
-        session.commit()
         print("\n--- 処理結果 ---")
-        print(f"SalesHistoryテーブルへのインポート成功: {imported_count}件")
-        print(f"スキップ（重複）: {skipped_count}件")
+        print(f"車種辞書への新規追加: {imported_count}件")
+        print(f"スキップ（既存）: {skipped_count}件")
         print("----------------")
     
     except FileNotFoundError:
