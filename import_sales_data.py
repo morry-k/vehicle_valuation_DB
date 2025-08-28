@@ -1,5 +1,3 @@
-# import_sales_data.py
-
 import pandas as pd
 from pathlib import Path
 from src.db.database import engine, SessionLocal
@@ -14,31 +12,27 @@ def import_data():
     session = SessionLocal()
 
     try:
-        # ファイルをタブ区切り(sep='\t')、文字コードcp932で読み込む
-        # 変更後
         df = pd.read_csv(INPUT_CSV_PATH, sep=',', encoding='cp932')
-        
-        print("--- 読み込まれた列名 ---")
-        print(df.columns)
-        print("--------------------")
+        print(f"--- {len(df)}件のデータをCSVから読み込みました ---")
 
-        # 列名を日本語から英語に変換
         df.rename(columns={
             '引渡報告日': 'sale_date',
             '車台番号': 'chassis_number',
             '型式': 'model_code',
             '車名': 'car_name',
             '引渡先事業者／事業所名称': 'buyer_name',
-            '引渡先事業所所在地': 'buyer_location' # ▼▼▼ この行を追加 ▼▼▼
+            '引渡先事業所所在地': 'buyer_location'
         }, inplace=True)
-        
-        # 必要な列が存在するか確認
-        required_cols = ['sale_date', 'chassis_number', 'model_code', 'car_name', 'buyer_name']
-        if not all(col in df.columns for col in required_cols):
-            print("エラー: CSVに必要な列名が見つかりません。")
-            return
 
+        if 'model_code' not in df.columns:
+            print("エラー: CSVに'型式'列が見つかりません。")
+            return
+            
         df['sale_date'] = pd.to_datetime(df['sale_date']).dt.date
+        
+        # ▼▼▼ 型式の接頭辞（例: "DBA-"）を削除する正規化処理を追加 ▼▼▼
+        df['model_code'] = df['model_code'].str.split('-').str[-1]
+        print("--- 型式の正規化が完了しました ---")
 
         imported_count = 0
         skipped_count = 0

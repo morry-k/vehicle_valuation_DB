@@ -39,57 +39,93 @@ def run_phase1_extract_all_vehicles() -> pd.DataFrame:
 # ▼▼▼ この関数が不足していました ▼▼▼
 def run_phase2_enrich_data(master_df: pd.DataFrame) -> pd.DataFrame:
     """
-    フェーズ2: 車種マスターリストのデータを拡充する
+    フェーズ2 (模擬): AI処理と待機時間をスキップし、受け取ったデータをそのまま返す
     """
-    enriched_df = enrich_vehicle_data(master_df)
-    return enriched_df
+    print("  - [スキップ] AIによるデータ拡充処理をスキップします。")
+    
+    # AIで取得するはずだった列を、空の状態で追加しておく
+    # これにより、後のフェーズ3がエラーなく動作する
+    master_df['weight_kg'] = None
+    master_df['engine_model'] = None
+    master_df['catalyst_model'] = None
+    
+    return master_df
 
 # src/pipeline.py の run_phase3_calculate_value 関数
 
-def run_phase3_calculate_value(all_vehicles_df: pd.DataFrame, enriched_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    フェーズ3: 新しい車両データと既存のDBをマージし、出現回数を更新する
-    """
-    print("  - 既存データベースの読み込みと更新を開始します...")
-    
-    key_cols = ['maker', 'car_name', 'model_code']
-    db_cols = key_cols + ['appearance_count', 'year', 'grade', 'weight_kg', 'engine_model', 'catalyst_model']
+# src/pipeline.py
 
-    # --- 1. 既存DBを読み込む ---
+import pandas as pd
+from datetime import datetime
+from src import config
+from src.db.database import SessionLocal, engine
+from src.db.models import VehicleMaster, SalesHistory, SQLModel
+
+# ... (run_phase1 と run_phase2 は変更なし) ...
+
+def run_phase3_update_database(all_vehicles_df: pd.DataFrame, enriched_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    フェーズ3: データベースを更新し、落札実績を集計して最終的なリストを返す
+    """
+    print("  - データベースの更新と落札実績の集計を開始します...")
+    SQLModel.metadata.create_all(engine)
+    session = SessionLocal()
+
     try:
-        existing_db = pd.read_csv(config.VEHICLE_VALUE_LIST_PATH)
-        print(f"  - 既存のデータベース（{len(existing_db)}件）を読み込みました。")
-    except FileNotFoundError:
-        existing_db = pd.DataFrame(columns=db_cols)
-        print("  - 既存のデータベースが見つからないため、新規に作成します。")
+        # --- 1. 既存の車種マスターを辞書として一度に読み込む（高速化） ---
+        existing_vehicles = {v.model_code: v for v in session.query(VehicleMaster).all()}
+        print(f"  - 既存の車種マスター（{len(existing_vehicles)}件）を読み込みました。")
 
-    # --- 2. 今回抽出した全車両リストから、出現回数を計算 ---
-    appearance_counts = all_vehicles_df.groupby(key_cols).size().reset_index(name='new_appearance_count')
+        # --- 2. 今回のPDFから出現回数を計算 ---
+        key_cols = ['maker', 'car_name', 'model_code']
+        appearance_counts = all_vehicles_df.groupby(key_cols).size().reset_index(name='new_appearance_count')
+        
+        # --- 3. 今回のユニークな車種情報と出現回数を結合 ---
+        update_data = pd.merge(enriched_df, appearance_counts, on=key_cols, how="left")
 
-    # --- 3. スペック情報（拡充済みデータ）と出現回数データを結合 ---
-    # enriched_dfには既にユニークな車種のスペック情報が入っている
-    merged_new_data = pd.merge(enriched_df, appearance_counts, on=key_cols, how="left")
+        # --- 4. データベース内の車種マスターを更新または新規登録 ---
+        for record in update_data.to_dict('records'):
+            model_code = record.get('model_code')
+            if not model_code:
+                continue
 
-    # --- 4. 既存DBと新しいデータをマージ ---
-    final_db = pd.merge(existing_db, merged_new_data, on=key_cols, how='outer', suffixes=('_old', '_new'))
+            # 辞書を使って既存レコードを検索
+            vehicle = existing_vehicles.get(model_code)
+            
+            if vehicle:
+                # 存在すれば、出現回数を加算し、情報を更新
+                vehicle.appearance_count += record.get('new_appearance_count', 0)
+                vehicle.weight_kg = record.get('weight_kg')
+                vehicle.engine_model = record.get('engine_model')
+                vehicle.catalyst_model = record.get('catalyst_model')
+                vehicle.year = record.get('year')
+                vehicle.grade = record.get('grade')
+                vehicle.updated_at = datetime.utcnow()
+            else:
+                # 存在しなければ、新しいレコードとして作成
+                vehicle = VehicleMaster(**record)
+                vehicle.appearance_count = record.get('new_appearance_count', 0)
+                # 新しいレコードなので、existing_vehicles辞書にも追加
+                existing_vehicles[model_code] = vehicle
+            
+            session.add(vehicle)
+        
+        session.commit()
+        print("  - 車種マスターの更新が完了しました。")
 
-    # --- 5. 出現回数を更新し、列を整理 ---
-    if 'appearance_count_old' not in final_db.columns:
-        final_db['appearance_count_old'] = 0
-    if 'new_appearance_count' not in final_db.columns:
-        final_db['new_appearance_count'] = 0
-    
-    final_db['appearance_count'] = final_db['appearance_count_old'].fillna(0) + final_db['new_appearance_count'].fillna(0)
-    final_db['appearance_count'] = final_db['appearance_count'].astype(int)
-    
-    # 新しいデータにしかなかった行のために、他の列の値を更新
-    for col in ['year', 'grade', 'weight_kg', 'engine_model', 'catalyst_model']:
-        if f'{col}_new' in final_db.columns and f'{col}_old' in final_db.columns:
-            final_db[col] = final_db[f'{col}_new'].fillna(final_db[f'{col}_old'])
+        # --- 5. 落札実績テーブルから、型式ごとの件数を集計 ---
+        sales_counts_df = pd.read_sql(
+            "SELECT model_code, COUNT(id) as sales_count FROM saleshistory GROUP BY model_code",
+            engine
+        )
+        print("  - 落札実績の集計が完了しました。")
 
-    # 最終的に必要な列だけを選択して整理
-    final_columns = [col for col in db_cols if col in final_db.columns]
-    final_db = final_db[final_columns]
+        # --- 6. 最新の車種マスターをDBから読み出し、落札実績件数を結合 ---
+        final_master_df = pd.read_sql("SELECT * FROM vehiclemaster", engine)
+        final_output_df = pd.merge(final_master_df, sales_counts_df, on='model_code', how='left')
+        final_output_df['sales_count'] = final_output_df['sales_count'].fillna(0).astype(int)
 
-    print("  - データベースの更新が完了しました。")
-    return final_db
+    finally:
+        session.close()
+
+    return final_output_df
