@@ -24,7 +24,7 @@ def enrich_vehicle_data(master_df: pd.DataFrame) -> pd.DataFrame:
         new_record.update(specs)
         enriched_records.append(new_record)
         
-        time.sleep(5)
+        time.sleep(0.1)
     
     print("  - データ拡充処理が完了しました。")
     return pd.DataFrame(enriched_records)

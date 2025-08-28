@@ -11,7 +11,7 @@ def run_phase1_extract_all_vehicles() -> pd.DataFrame:
     """
     フェーズ1: inputフォルダ内の全PDFを解析し、「重複を含む」全車両データを返す
     """
-    all_vehicles = [] # ← ★★★ 本来ここにあるべき変数の初期化 ★★★
+    all_vehicles = []
     
     pdf_files = list(config.AUCTION_SHEETS_DIR.glob("*.pdf"))
     
@@ -40,15 +40,9 @@ def run_phase1_extract_all_vehicles() -> pd.DataFrame:
 
     return df
 
-def run_phase2_enrich_data(master_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    フェーズ2: AIを使って車種マスターリストのデータを拡充する
-    """
-    # scraper.pyに定義された、AIを呼び出す関数を実行する
-    enriched_df = enrich_vehicle_data(master_df)
-    return enriched_df
+# run_phase2_enrich_dataは不要になるため削除（または後述のenrich_database.pyに移動）
 
-def run_phase3_update_database(all_vehicles_df: pd.DataFrame, enriched_df: pd.DataFrame) -> pd.DataFrame:
+def run_phase3_update_database(all_vehicles_df: pd.DataFrame, unique_vehicles_df: pd.DataFrame) -> pd.DataFrame:
     """
     フェーズ3: データベースを更新し、落札実績を集計して最終的なリストを返す
     """
@@ -61,45 +55,46 @@ def run_phase3_update_database(all_vehicles_df: pd.DataFrame, enriched_df: pd.Da
         existing_vehicles = {v.model_code: v for v in session.query(VehicleMaster).all()}
         print(f"  - 既存の車種マスター（{len(existing_vehicles)}件）を読み込みました。")
 
-        # 2. 今回のPDFから更新・追加すべきデータを準備
-        key_cols = ['maker', 'car_name', 'model_code']
-        appearance_counts = all_vehicles_df.groupby(key_cols).size().reset_index(name='new_appearance_count')
-        update_data_from_pdf = pd.merge(enriched_df, appearance_counts, on=key_cols, how="left")
-
-        # 3. メモリ上でPDF由来のデータを更新・追加
-        for record in update_data_from_pdf.to_dict('records'):
+        # 2. PDF由来のデータをデータベースに追加・更新
+        for record in unique_vehicles_df.to_dict('records'):
             model_code = record.get('model_code')
             if not model_code: continue
             
+            # 既存か新規かチェック
             vehicle = existing_vehicles.get(model_code)
             if vehicle:
-                vehicle.appearance_count += int(record.get('new_appearance_count', 0))
-                for col in ['year', 'grade', 'engine_model', 'drive_type', 'body_type', 'total_weight_kg', 'engine_weight_kg']:
-                    if pd.notna(record.get(col)):
-                        setattr(vehicle, col, record.get(col))
+                # 既存の場合は出品回数を更新
                 vehicle.updated_at = datetime.utcnow()
             else:
+                # 新規の場合は追加
                 vehicle = VehicleMaster(**{k: v for k, v in record.items() if k in VehicleMaster.__fields__})
-                vehicle.appearance_count = int(record.get('new_appearance_count', 0))
-                existing_vehicles[model_code] = vehicle # ★★★ メモリ上の辞書を更新
-            session.add(vehicle)
+                session.add(vehicle)
+                existing_vehicles[model_code] = vehicle
 
-        # 4. メモリ上で落札実績のみのデータを追加
+        # 3. 落札実績にしかいない車種をデータベースに追加
         sales_only_query = session.query(
             SalesHistory.maker, SalesHistory.car_name, SalesHistory.model_code
         ).distinct()
         
         for sale in sales_only_query.all():
-            if sale.model_code not in existing_vehicles: # メモリ上の辞書で重複チェック
+            if sale.model_code not in existing_vehicles:
                 vehicle = VehicleMaster(
                     maker=sale.maker, car_name=sale.car_name, model_code=sale.model_code, appearance_count=0
                 )
                 session.add(vehicle)
-                existing_vehicles[sale.model_code] = vehicle # ★★★ メモリ上の辞書を更新
+                existing_vehicles[sale.model_code] = vehicle
 
-        # 5. すべての変更を一度にDBに書き込む
+        # 4. すべての変更を一度にDBに書き込む
         session.commit()
         print("  - 車種マスターの更新が完了しました。")
+
+        # 5. 出品回数を集計して反映
+        appearance_counts = all_vehicles_df.groupby('model_code').size().reset_index(name='appearance_count')
+        for record in appearance_counts.to_dict('records'):
+            vehicle = session.query(VehicleMaster).filter_by(model_code=record['model_code']).first()
+            if vehicle:
+                vehicle.appearance_count = record['appearance_count']
+        session.commit()
 
         # 6. 最終的な結果を生成
         sales_counts_df = pd.read_sql("SELECT model_code, COUNT(id) as sales_count FROM saleshistory GROUP BY model_code", engine)
