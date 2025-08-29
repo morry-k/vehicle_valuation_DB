@@ -28,13 +28,19 @@ VEHICLE_VALUE_LIST_PATH = OUTPUT_DIR / "vehicle_value_list.csv"
 VALUATION_PRICES = {
     # 1kgあたりの単価
     "engine_per_kg": 70, # ▼▼▼ この行を追加 ▼▼▼
-    "press_per_kg": 25.5,
+    "press_per_kg": 21.5,
     "kouzan_per_kg": 35.0,
+
+    # ▼▼▼ このハーネス重量の推定ロジックを追加 ▼▼▼
+    # 車両総重量に対するハーネスの基本重量比
+    "harness_per_kg": 350,  # 総重量の1%を基本とする
     
     # 部品ごとの固定価格
     "harness_price": 8000,
     "aluminum_wheels_price": 4800,
-    "catalyst_price": 20000,
+    "catalyst_price": 6000,
     "freon_price": 1500,
     "airbag_price": 1200
 }
+# 車両総重量に対するハーネスの基本重量比
+HARNESS_BASE_RATIO = 0.010  # 総重量の1%を基本とする
