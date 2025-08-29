@@ -42,5 +42,9 @@ VALUATION_PRICES = {
     "freon_price": 1500,
     "airbag_price": 1200
 }
-# 車両総重量に対するハーネスの基本重量比
-HARNESS_BASE_RATIO = 0.010  # 総重量の1%を基本とする
+# 車両総重量に対する各素材の基本重量比
+WEIGHT_BASE_RATIOS = {
+    "press": 0.50,      # プレス材（鉄）は総重量の60%
+    "kouzan": 0.20,     # 甲山は総重量の15%
+    "harness": 0.010    # ハーネスは総重量の1.8%
+}
