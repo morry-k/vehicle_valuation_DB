@@ -3,8 +3,9 @@ from pathlib import Path
 from datetime import datetime
 from src.db.database import engine, SessionLocal
 from src.db.models import ComponentValue, SQLModel
+from src.data_processing.llm_client import get_full_engine_model_from_llm # 新しい関数をインポート
+import time
 
-# ▼▼▼ ファイル名を実際のExcelファイル名に修正 ▼▼▼
 INPUT_XLSX_PATH = Path(__file__).parent / "data" / "input" / "sales_records" / "sales_2025_06.xlsx"
 
 def parse_details_to_tags(detail_string: str) -> str:
@@ -17,28 +18,35 @@ def parse_details_to_tags(detail_string: str) -> str:
     if "4wd" in detail_lower: tags.add("4wd")
     return ",".join(sorted(list(tags))) if tags else "standard"
 
-# import_market_prices.py の run_import 関数
-
 def run_import():
     print(f"'{INPUT_XLSX_PATH.name}' から市場価格のインポートを開始します...")
     SQLModel.metadata.create_all(engine)
     session = SessionLocal()
 
     try:
-        # ▼▼▼ header=3 を追加 ▼▼▼
-        # header=3 は「4行目をヘッダーとして読み込む」という意味 (0から数えるため)
         df = pd.read_excel(INPUT_XLSX_PATH, header=3)
-        
-        # すべての列名の前後に存在する可能性のある空白を自動で削除する
         df.columns = df.columns.str.strip()
-        
-        # 「E/G型式」が空の行は除外
-        df.dropna(subset=['E/G型式'], inplace=True)
-        
-        
+        df.dropna(subset=['E/G型式', '単価'], inplace=True)
+
+        # --- ▼▼▼ AIによるエンジン型式の正規化処理を追加 ▼▼▼ ---
+        print("\n--- AIを使ってエンジン型式の正規化を開始します ---")
+        normalized_engines = []
+        for index, row in df.iterrows():
+            print(f"  - 処理中 ({index + 1}/{len(df)}): {row.get('メ－カ－')} {row.get('車輌型式')} ({row.get('E/G型式')})")
+            full_engine_model = get_full_engine_model_from_llm(
+                row.get('メ－カ－'), row.get('車輌型式'), row.get('E/G型式')
+            )
+            normalized_engines.append(full_engine_model)
+            time.sleep(0.1) # レートリミット対策
+
+        df['engine_model_normalized'] = normalized_engines
+        print("--- エンジン型式の正規化が完了しました ---\n")
+        # --- ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ ---
+
         df['details_tags'] = df['詳細'].apply(parse_details_to_tags)
         
-        key_cols = ['品名', 'E/G型式', 'details_tags']
+        # グループ化のキーを正規化後のエンジン型式に変更
+        key_cols = ['品名', 'engine_model_normalized', 'details_tags']
         grouped = df.groupby(key_cols)
 
         print(f"{len(grouped)}種類の部品グループが見つかりました。データベースを更新します...")
@@ -46,20 +54,23 @@ def run_import():
         for name, group in grouped:
             item_name, engine_model, tags = name
             
+            latest_row = group.sort_values(by='日付', ascending=False).iloc[0]
             avg_price = group['単価'].mean()
-            latest_price = group.sort_values(by='日付').iloc[-1]['単価']
+            latest_price = latest_row['単価']
             sample_size = len(group)
 
             existing_value = session.query(ComponentValue).filter_by(
-                item_name=item_name, engine_model=engine_model, details_tags=tags
+                item_name=str(item_name), engine_model=str(engine_model), details_tags=tags
             ).first()
 
             if existing_value:
-                existing_value.latest_price, existing_value.average_price, existing_value.sample_size = latest_price, avg_price, sample_size
+                existing_value.latest_price = latest_price
+                existing_value.average_price = avg_price
+                existing_value.sample_size = sample_size
                 existing_value.updated_at = datetime.utcnow()
             else:
                 existing_value = ComponentValue(
-                    item_name=item_name, engine_model=engine_model, details_tags=tags,
+                    item_name=str(item_name), engine_model=str(engine_model), details_tags=tags,
                     latest_price=latest_price, average_price=avg_price, sample_size=sample_size
                 )
             session.add(existing_value)
@@ -67,13 +78,9 @@ def run_import():
         session.commit()
         print("\n✅ 市場価格データベースの更新が完了しました。")
 
-    except FileNotFoundError:
-        print(f"エラー: ファイルが見つかりません: {INPUT_XLSX_PATH}")
-    except KeyError as e:
-        print(f"エラー: Excelファイルに必要な列が見つかりません: {e}")
-        print("Excelファイルのヘッダー行（1行目）に、必要な列名（特に E/G型式）が存在するか確認してください。")
     except Exception as e:
         print(f"エラーが発生しました: {e}")
+        session.rollback()
     finally:
         session.close()
 
