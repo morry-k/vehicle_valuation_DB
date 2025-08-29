@@ -5,6 +5,9 @@ from src.db.models import VehicleMaster, ComponentValue
 from src.config import VALUATION_PRICES
 
 def estimate_scrap_value(model_code_to_find: str):
+    """
+    指定された型式の車両価値を見積もる
+    """
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -20,50 +23,54 @@ def estimate_scrap_value(model_code_to_find: str):
         
         breakdown = {}
         total_value = 0.0
-        remarks = [] # 備考を記録するリスト
+        remarks = []
 
-        # --- 1. エンジン価値を部品価格表から取得 ---
-        engine_value = 0.0
+        # --- ▼▼▼ ここからエンジン価値の判定ロジック ▼▼▼ ---
+        
+        # 1. 部品としての市場価値を取得
+        resale_value = 0.0
         if vehicle.engine_model:
             comp_value = session.query(ComponentValue).filter(
                 ComponentValue.item_name.like('%エンジン%'),
                 ComponentValue.engine_model == vehicle.engine_model
             ).order_by(ComponentValue.sample_size.desc()).first()
-            if comp_value: 
-                engine_value = comp_value.average_price
+            if comp_value:
+                resale_value = comp_value.average_price
                 remarks.append(f"エンジン価値は {comp_value.sample_size}件 の取引データに基づく")
-        breakdown["エンジン/ミッション"] = engine_value
-        total_value += engine_value
 
-        # --- 2. 重量ベースの価値を「計算」または「推定」する ---
+        # 2. 素材としての金属価値を計算
+        material_value = 0.0
+        if vehicle.engine_weight_kg:
+            material_value = vehicle.engine_weight_kg * VALUATION_PRICES["engine_per_kg"]
+            remarks.append("エンジン重量はAIによる調査値")
+        elif vehicle.total_weight_kg:
+            estimated_weight = vehicle.total_weight_kg * 0.15 # 総重量から推定
+            material_value = estimated_weight * VALUATION_PRICES["engine_per_kg"]
+            remarks.append("エンジン重量は車両総重量からの推定値")
+
+        # 3. 価値が高い方を採用
+        if resale_value > material_value:
+            # 部品価値の方が高い場合
+            breakdown["エンジン/ミッション (部品推奨)"] = resale_value
+            total_value += resale_value
+        else:
+            # 素材価値の方が高い、または部品価値がない場合
+            breakdown["エンジン (素材価値)"] = material_value
+            total_value += material_value
+
+        # --- ▲▲▲ エンジン価値の判定ロジックここまで ▲▲▲ ---
+
+        # --- 重量ベースの価値を「計算」する ---
         if vehicle.total_weight_kg:
-            engine_weight = 0
-            if vehicle.engine_weight_kg:
-                # DBに正確なエンジン重量があれば、それを使う
-                engine_weight = vehicle.engine_weight_kg
-                remarks.append("エンジン重量はAIによる調査値")
-            else:
-                # なければ、車両総重量の15%として推定する
-                engine_weight = vehicle.total_weight_kg * 0.15
-                remarks.append("エンジン重量は車両総重量からの推定値")
-
-            # 業界知識に基づく比率で他の重量も計算
             press_weight = vehicle.total_weight_kg * 0.60
             kouzan_weight = vehicle.total_weight_kg * 0.15
-            
-            # エンジン素材価値（エンジン価値とは別）
-            engine_material_value = engine_weight * VALUATION_PRICES["engine_per_kg"]
-            breakdown["エンジン(素材価値)"] = engine_material_value
-            # total_value += engine_material_value # 通常はエンジン/ミッション価値に含意されるため、ここでは加算しない
-
             press_value = press_weight * VALUATION_PRICES["press_per_kg"]
             kouzan_value = kouzan_weight * VALUATION_PRICES["kouzan_per_kg"]
             breakdown["プレス材 (鉄)"] = press_value
             breakdown["甲山 (ミックスメタル)"] = kouzan_value
             total_value += press_value + kouzan_value
 
-        # --- 3. 固定価格の価値を加算 ---
-        # ... (この部分は変更なし) ...
+        # --- 固定価格の価値を加算 ---
         fixed_value_items = ["harness_price", "aluminum_wheels_price", "catalyst_price", "freon_price", "airbag_price"]
         item_names = {"harness_price": "ハーネス (銅)", "aluminum_wheels_price": "アルミホイール", "catalyst_price": "触媒", "freon_price": "フロン", "airbag_price": "エアバッグ"}
         for item_key in fixed_value_items:
@@ -71,10 +78,10 @@ def estimate_scrap_value(model_code_to_find: str):
             breakdown[item_names[item_key]] = value
             total_value += value
         
-        # --- 4. 結果を表示 ---
+        # --- 結果を表示 ---
         print("\n【価値の内訳】")
         for item, value in breakdown.items():
-            print(f"- {item:<20}: {value:,.0f} 円")
+            print(f"- {item:<25}: {value:,.0f} 円")
         
         print("----------------------------------------")
         print(f"合計見積価値: {total_value:,.0f} 円")
