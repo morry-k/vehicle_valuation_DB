@@ -1,2 +1,4 @@
-id,total_weight_kg
-529,1550
+id,car_name,engine_model,drive_type,body_type,total_weight_kg,engine_weight_kg
+400,ハイゼットトラック,KF-VE,4WD,軽トラック,790,55
+500,320i Cabriolet,N43B20A,FR,オープン,1630,
+199,エクシーガ,EJ20,4WD,ミニバン,1510,150
