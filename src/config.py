@@ -27,14 +27,14 @@ VEHICLE_VALUE_LIST_PATH = OUTPUT_DIR / "vehicle_value_list.csv"
 # 価値算定のための単価・固定価格リスト (円)
 VALUATION_PRICES = {
     # 1kgあたりの単価
-    "engine_per_kg": 70,
+    "engine_per_kg": 70, # ▼▼▼ この行を追加 ▼▼▼
+    "press_per_kg": 25.5,
     "kouzan_per_kg": 35.0,
-    "wiring_per_kg": 350,
-    "press_per_kg": 21.5,
     
     # 部品ごとの固定価格
-    "aluminum_wheels": 4800,
-    "catalyst": 6000,
-    "freon": 1500,
-    "airbag": 1200,
+    "harness_price": 8000,
+    "aluminum_wheels_price": 4800,
+    "catalyst_price": 20000,
+    "freon_price": 1500,
+    "airbag_price": 1200
 }
