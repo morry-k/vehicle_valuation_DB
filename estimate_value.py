@@ -1,8 +1,37 @@
 import sys
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 from src.db.database import engine
 from src.db.models import VehicleMaster, ComponentValue
 from src.config import VALUATION_PRICES
+
+def get_component_price(session: Session, item_name: str, vehicle: VehicleMaster) -> float:
+    """
+    部品の価値を検索するヘルパー関数
+    優先順位： 1. 車種専用価格 -> 2. 汎用部品価格 -> 3. 設定ファイルの基本価格
+    """
+    # 1. まず、車種指定の「特別価格」を検索
+    price_record = session.query(ComponentValue).filter_by(
+        item_name=item_name,
+        model_code=vehicle.model_code
+    ).first()
+    if price_record:
+        print(f"（情報: {vehicle.model_code}専用の'{item_name}'価格を適用）")
+        return price_record.average_price
+
+    # 2. なければ、エンジン型式ベースの「汎用価格」を検索
+    if vehicle.engine_model:
+        price_record = session.query(ComponentValue).filter_by(
+            item_name=item_name,
+            engine_model=vehicle.engine_model
+        ).order_by(ComponentValue.sample_size.desc()).first()
+        if price_record:
+            print(f"（情報: {vehicle.engine_model}搭載車の'{item_name}'価格を適用）")
+            return price_record.average_price
+
+    # 3. それでもなければ、config.pyの基本価格を返す
+    default_price_key = item_name.lower().replace("/", "_") + "_price"
+    return VALUATION_PRICES.get(default_price_key, 0.0)
+
 
 def estimate_scrap_value(model_code_to_find: str):
     """
@@ -23,44 +52,23 @@ def estimate_scrap_value(model_code_to_find: str):
         
         breakdown = {}
         total_value = 0.0
-        remarks = []
 
-        # --- ▼▼▼ ここからエンジン価値の判定ロジック ▼▼▼ ---
-        
-        # 1. 部品としての市場価値を取得
-        resale_value = 0.0
-        if vehicle.engine_model:
-            comp_value = session.query(ComponentValue).filter(
-                ComponentValue.item_name.like('%エンジン%'),
-                ComponentValue.engine_model == vehicle.engine_model
-            ).order_by(ComponentValue.sample_size.desc()).first()
-            if comp_value:
-                resale_value = comp_value.average_price
-                remarks.append(f"エンジン価値は {comp_value.sample_size}件 の取引データに基づく")
-
-        # 2. 素材としての金属価値を計算
-        material_value = 0.0
+        # --- 1. エンジン価値を判定 ---
+        engine_resale_value = get_component_price(session, "エンジン/ミッション", vehicle)
+        engine_material_value = 0.0
         if vehicle.engine_weight_kg:
-            material_value = vehicle.engine_weight_kg * VALUATION_PRICES["engine_per_kg"]
-            remarks.append("エンジン重量はAIによる調査値")
+            engine_material_value = vehicle.engine_weight_kg * VALUATION_PRICES["engine_per_kg"]
         elif vehicle.total_weight_kg:
-            estimated_weight = vehicle.total_weight_kg * 0.15 # 総重量から推定
-            material_value = estimated_weight * VALUATION_PRICES["engine_per_kg"]
-            remarks.append("エンジン重量は車両総重量からの推定値")
+            engine_material_value = (vehicle.total_weight_kg * 0.15) * VALUATION_PRICES["engine_per_kg"]
 
-        # 3. 価値が高い方を採用
-        if resale_value > material_value:
-            # 部品価値の方が高い場合
-            breakdown["エンジン/ミッション (部品推奨)"] = resale_value
-            total_value += resale_value
+        if engine_resale_value > engine_material_value:
+            breakdown["エンジン/ミッション (部品推奨)"] = engine_resale_value
+            total_value += engine_resale_value
         else:
-            # 素材価値の方が高い、または部品価値がない場合
-            breakdown["エンジン (素材価値)"] = material_value
-            total_value += material_value
+            breakdown["エンジン (素材価値)"] = engine_material_value
+            total_value += engine_material_value
 
-        # --- ▲▲▲ エンジン価値の判定ロジックここまで ▲▲▲ ---
-
-        # --- 重量ベースの価値を「計算」する ---
+        # --- 2. 重量ベースの価値を計算 ---
         if vehicle.total_weight_kg:
             press_weight = vehicle.total_weight_kg * 0.60
             kouzan_weight = vehicle.total_weight_kg * 0.15
@@ -69,16 +77,24 @@ def estimate_scrap_value(model_code_to_find: str):
             breakdown["プレス材 (鉄)"] = press_value
             breakdown["甲山 (ミックスメタル)"] = kouzan_value
             total_value += press_value + kouzan_value
-
-        # --- 固定価格の価値を加算 ---
-        fixed_value_items = ["harness_price", "aluminum_wheels_price", "catalyst_price", "freon_price", "airbag_price"]
-        item_names = {"harness_price": "ハーネス (銅)", "aluminum_wheels_price": "アルミホイール", "catalyst_price": "触媒", "freon_price": "フロン", "airbag_price": "エアバッグ"}
-        for item_key in fixed_value_items:
-            value = VALUATION_PRICES[item_key]
-            breakdown[item_names[item_key]] = value
-            total_value += value
         
-        # --- 結果を表示 ---
+        # --- 3. その他の部品価値を加算 ---
+        # ハイブリッドバッテリーや触媒など、車種によって価値が大きく異なる部品
+        battery_value = get_component_price(session, "Hybrid Battery", vehicle)
+        if battery_value > 0:
+            breakdown["ハイブリッドバッテリー"] = battery_value
+            total_value += battery_value
+
+        catalyst_value = get_component_price(session, "Catalyst", vehicle)
+        breakdown["触媒"] = catalyst_value
+        total_value += catalyst_value
+        
+        # 固定価格の部品
+        breakdown["ハーネス (銅)"] = VALUATION_PRICES["harness_price"]
+        breakdown["アルミホイール"] = VALUATION_PRICES["aluminum_wheels_price"]
+        total_value += VALUATION_PRICES["harness_price"] + VALUATION_PRICES["aluminum_wheels_price"]
+
+        # --- 4. 結果を表示 ---
         print("\n【価値の内訳】")
         for item, value in breakdown.items():
             print(f"- {item:<25}: {value:,.0f} 円")
@@ -86,14 +102,8 @@ def estimate_scrap_value(model_code_to_find: str):
         print("----------------------------------------")
         print(f"合計見積価値: {total_value:,.0f} 円")
 
-        if remarks:
-            print("\n【備考】")
-            for remark in remarks:
-                print(f"- {remark}")
-
     finally:
         session.close()
-
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

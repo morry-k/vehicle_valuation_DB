@@ -28,16 +28,17 @@ class VehicleMaster(SQLModel, table=True):
 # ▼▼▼ このモデル定義をファイル末尾に追加 ▼▼▼
 class ComponentValue(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    item_name: str = Field(index=True)      # 品名 (例: "エンジン/ミッション")
-    engine_model: Optional[str] = Field(default=None, index=True) # E/G型式
+    item_name: str = Field(index=True)
+    engine_model: Optional[str] = Field(default=None, index=True)
     
-    # 「詳細」をタグ化したもの (例: "no_catalyst,with_suspension")
-    details_tags: str = Field(index=True, default="standard") 
+    # ▼▼▼ この行を追加 ▼▼▼
+    # 特定の車種向けの価格かを識別するために使用
+    model_code: Optional[str] = Field(default=None, index=True)
     
-    latest_price: float # 最新の取引単価
-    average_price: float # 平均取引単価
-    sample_size: int    # 価格計算の基になった取引件数
-    
+    details_tags: str = Field(index=True, default="standard")
+    latest_price: float
+    average_price: float
+    sample_size: int
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 class SalesHistory(SQLModel, table=True):
