@@ -51,14 +51,17 @@ app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 def generate_report_pdf(results: list) -> str:
-    pdf = PDF(orientation='L')
+    """算定結果のリストから「最終版」の表形式PDFレポートを生成する"""
+    pdf = PDF(orientation='L') # 用紙を横向きに設定
     pdf.add_page()
     
+    # --- ▼▼▼ 表示したい列に合わせてヘッダーを定義 ▼▼▼ ---
     headers = [
         ("出品番号", 20), ("メーカー", 20), ("車名", 35), ("型式", 25),
-        ("E/G型式", 20), ("総重量", 15), ("E/G価値", 20), 
-        ("プレス材", 20), ("甲山", 20), ("ハーネス", 20), 
-        ("アルミ", 18), ("触媒", 15), ("輸送費", 15), ("合計価値", 22)
+        ("E/G型式", 20), ("総重量", 15),
+        ("E/G価値", 20), ("プレス材", 20), ("甲山", 20),
+        ("ハーネス", 20), ("アルミ", 18), ("触媒", 15),
+        ("輸送費", 15), ("合計価値", 22)
     ]
     
     pdf.set_font('ipaexg', 'B', 7)
@@ -66,18 +69,22 @@ def generate_report_pdf(results: list) -> str:
         pdf.cell(width, 7, header, border=1, align='C')
     pdf.ln()
 
+    # --- ▼▼▼ 表示したいデータを正しく抽出して行を作成 ▼▼▼ ---
     pdf.set_font('ipaexg', '', 6)
     for res in results:
         if not res or "error" in res: continue
         
+        # res辞書には、PDFの生データとDBからの補足情報がすべてマージされている
         breakdown = res.get('breakdown', {})
+        
+        # データを抽出（getの第二引数で、値がない場合は空文字''にする）
         row_data = [
             res.get('auction_no', ''),
             res.get('maker', ''),
             res.get('car_name', ''),
             res.get('model_code', ''),
             res.get('engine_model', ''),
-            str(res.get('total_weight_kg', '')),
+            str(res.get('total_weight_kg', '')), # 数値の可能性があるのでstrに変換
             f"{breakdown.get('エンジン/ミッション (部品推奨)', breakdown.get('エンジン (素材価値)', 0)):,.0f}",
             f"{breakdown.get('プレス材 (鉄)', 0):,.0f}",
             f"{breakdown.get('甲山 (ミックスメタル)', 0):,.0f}",
@@ -124,16 +131,24 @@ async def analyze_sheet_endpoint(file: UploadFile = File(...), params_str: str =
                 model_code = row.get('model_code')
                 if not model_code: continue
                 
-                # estimate_value.pyに型式を渡して、価値算定だけを行わせる
                 valuation = estimate_scrap_value(model_code, session, custom_prices=params)
                 
-                # PDFから得た元の情報と、算定結果を合体（マージ）させる
                 final_record = row.to_dict()
                 final_record.update(valuation)
-                final_record.update(valuation.get('vehicle_info', {})) # DBからの補足情報もマージ
+                if valuation and 'vehicle_info' in valuation:
+                    final_record.update(valuation.get('vehicle_info', {}))
                 results.append(final_record)
         finally:
             session.close()
+
+        # ▼▼▼ ここからがデバッグ表示 ▼▼▼
+        print("\n" + "="*50)
+        print("デバッグ情報：PDF生成に渡されるデータ（最初の1件）")
+        if results:
+            import pprint
+            pprint.pprint(results[0])
+        print("="*50 + "\n")
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         output_pdf_path = generate_report_pdf(results)
         return FileResponse(output_pdf_path, media_type='application/pdf', filename="valuation_report.pdf")
