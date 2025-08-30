@@ -54,29 +54,52 @@ app.add_middleware(
 )
 
 def generate_report_pdf(results: list) -> str:
-    """算定結果のリストからPDFレポートを生成する"""
-    pdf = PDF() # ★ FPDF() の代わりに、新しいPDF()クラスを使う
+    """算定結果のリストから「表形式」のPDFレポートを生成する"""
+    pdf = PDF(orientation='L') # カスタムクラスを使用
     pdf.add_page()
     
-    pdf.set_font_size(8)
-    pdf.cell(0, 5, f"算定日時: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", 0, 1, 'R')
-    pdf.ln(5)
+    # --- 表のヘッダーを定義 ---
+    # (項目名, 横幅)
+    headers = [
+        ("メーカー", 20), ("車名", 35), ("型式", 25),
+        ("エンジン価値", 25), ("プレス材", 20), ("甲山", 18),
+        ("ハーネス", 18), ("アルミ", 18), ("触媒", 15),
+        ("輸送費", 18), ("合計価値", 25)
+    ]
+    
+    pdf.set_font('ipaexg', 'B', 8) # ヘッダーは太字
+    for header, width in headers:
+        pdf.cell(width, 8, header, border=1, align='C')
+    pdf.ln()
 
+    # --- 表のデータ行を書き込み ---
+    pdf.set_font('ipaexg', '', 7) # データは標準フォント
     for res in results:
         if not res or "error" in res:
             continue
         
         info = res['vehicle_info']
-        header = f"{info.get('maker', '')} {info.get('car_name', '')} ({info.get('model_code', '')}) - 合計見積価値: {res.get('total_value', 0):,.0f} 円"
+        breakdown = res['breakdown']
         
-        pdf.set_font('ipaexg', 'B', 10)
-        pdf.cell(0, 8, header, 0, 1)
-
-        pdf.set_font('ipaexg', '', 8)
-        for item, value in res.get('breakdown', {}).items():
-            line = f"  - {item:<25}: {value:,.0f} 円"
-            pdf.cell(0, 5, line, 0, 1)
-        pdf.ln(5)
+        # 表示するデータを抽出・整形
+        row_data = [
+            info.get('maker', ''),
+            info.get('car_name', ''),
+            info.get('model_code', ''),
+            f"{breakdown.get('エンジン/ミッション (部品推奨)', breakdown.get('エンジン (素材価値)', 0)):,.0f}",
+            f"{breakdown.get('プレス材 (鉄)', 0):,.0f}",
+            f"{breakdown.get('甲山 (ミックスメタル)', 0):,.0f}",
+            f"{breakdown.get('ハーネス (銅)', 0):,.0f}",
+            f"{breakdown.get('アルミホイール', 0):,.0f}",
+            f"{breakdown.get('Catalyst', 0):,.0f}",
+            f"{breakdown.get('輸送費 (減算)', 0):,.0f}",
+            f"{res.get('total_value', 0):,.0f}"
+        ]
+        
+        # 1行書き込み
+        for data, width in zip(row_data, [w for h, w in headers]):
+            pdf.cell(width, 6, data, border=1)
+        pdf.ln()
 
     output_path = os.path.join(tempfile.gettempdir(), f"report_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf")
     pdf.output(output_path)
