@@ -58,7 +58,7 @@ def generate_report_pdf(results: list) -> str:
         ("E/G部品販売", 18), ("E/G価値", 16), 
         ("プレス材", 14), ("甲山", 14), ("ハーネス", 14), 
         ("アルミ", 14), ("触媒", 14), ("輸送費", 14), 
-        ("合計価値", 16), ("過去相場", 14), ("入札度", 10)
+        ("廃車価値", 16), ("過去相場(仮)", 14), ("入札対象", 10)
     ]
     
     pdf.set_font('ipaexg', 'B', 7)
@@ -144,7 +144,7 @@ async def analyze_sheet_endpoint(file: UploadFile = File(...), params_str: str =
 
 
                 # ▼▼▼ 新しいロジックを追加 ▼▼▼
-                past_auction_price = random.randint(40000, 150000)
+                past_auction_price = random.randint(30000, 110000)
                 final_record['past_auction_price'] = past_auction_price
 
                 total_value = valuation.get('total_value', 0)
