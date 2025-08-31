@@ -42,23 +42,20 @@ def estimate_scrap_value(model_code_to_find: str, session: Session, custom_price
         if not vehicle.engine_weight_kg:
             remarks.append("エンジン重量は車両総重量からの推定値")
 
-    # ▼▼▼ ここからが修正箇所 ▼▼▼
-    # まず、販売実績があるか（部品として価値があるか）を判定
+    # ▼▼▼ 「エンジン部品販売」のロジック ▼▼▼
     if engine_resale_value > 0:
         breakdown["エンジン部品販売"] = "〇"
     else:
         breakdown["エンジン部品販売"] = "×"
 
-    # 次に、表示する価値を部品価値と素材価値の高い方で決定
-    # (この部分は元のロジックと同じです)
+    # 価値の高い方を合計に加算
     if engine_resale_value > engine_material_value:
         breakdown["エンジン/ミッション"] = engine_resale_value
         total_value += engine_resale_value
     else:
         breakdown["エンジン/ミッション"] = engine_material_value
         total_value += engine_material_value
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
+    
     # --- 重量ベースの価値を計算 ---
     if vehicle.total_weight_kg:
         press_value = (vehicle.total_weight_kg * WEIGHT_BASE_RATIOS["press"]) * current_prices["press_per_kg"]
@@ -68,6 +65,7 @@ def estimate_scrap_value(model_code_to_find: str, session: Session, custom_price
         breakdown["甲山 (ミックスメタル)"] = kouzan_value
         breakdown["ハーネス (銅)"] = harness_value
         total_value += press_value + kouzan_value + harness_value
+    
     
     # --- その他の部品価値 ---
     breakdown["アルミホイール"] = current_prices["aluminum_wheels_price"]
