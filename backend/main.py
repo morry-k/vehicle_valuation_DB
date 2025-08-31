@@ -113,7 +113,17 @@ def generate_report_pdf(results: list) -> str:
 
 @app.get("/api/parameters")
 def get_parameters():
-    return {"press_per_kg": VALUATION_PRICES.get("press_per_kg", 0), "kouzan_per_kg": VALUATION_PRICES.get("kouzan_per_kg", 0), "transport_cost": 5000}
+    """フロントエンドに渡す、価値算定の基本パラメータを返す"""
+    # ▼▼▼ config.pyから返す値を、フロントエンドの表示項目と完全に一致させる ▼▼▼
+    return {
+        "engine_per_kg": VALUATION_PRICES.get("engine_per_kg", 0),
+        "press_per_kg": VALUATION_PRICES.get("press_per_kg", 0),
+        "kouzan_per_kg": VALUATION_PRICES.get("kouzan_per_kg", 0),
+        "harness_per_kg": VALUATION_PRICES.get("harness_per_kg", 0),
+        "aluminum_wheels_price": VALUATION_PRICES.get("aluminum_wheels_price", 0),
+        "catalyst_price": VALUATION_PRICES.get("catalyst_price", 0),
+        "transport_cost": 5000, # 輸送費は固定値として追加
+    }
 
 @app.post("/api/analyze-sheet")
 async def analyze_sheet_endpoint(file: UploadFile = File(...), params_str: str = Form(...)):

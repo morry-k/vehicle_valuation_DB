@@ -5,7 +5,6 @@ import axios from 'axios'
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null)
-  // パラメータのstateを新しい項目に合わせて更新
   const [params, setParams] = useState({
     engine_per_kg: 0,
     press_per_kg: 0,
@@ -50,12 +49,21 @@ export default function Home() {
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', 'valuation_report.pdf');
+      const fileName = `valuation_report_${new Date().toISOString()}.pdf`;
+      link.setAttribute('download', fileName);
       document.body.appendChild(link);
-      link.parentNode?.removeChild(link);
+      link.click();
+      
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+        if (link.parentNode) {
+            link.parentNode.removeChild(link);
+        }
+      }, 100);
+
     } catch (err) {
       console.error("アップロードまたは解析に失敗:", err);
-      alert("処理に失敗しました。");
+      alert("処理に失敗しました。バックエンドのターミナルでエラーを確認してください。");
     } finally {
       setLoading(false);
     }
@@ -65,10 +73,9 @@ export default function Home() {
     <main className="flex min-h-screen w-full items-center justify-center bg-gray-100 p-4">
       <div className="w-full max-w-4xl rounded-2xl bg-white p-8 shadow-lg">
         <h1 className="mb-8 text-center text-3xl font-bold text-gray-800">
-          オークション仕入れ支援ツール
+          車両価値算定ツール
         </h1>
         <form onSubmit={handleSubmit} className="space-y-8">
-          {/* PDFアップロード */}
           <div className="rounded-lg border border-gray-200 p-6">
             <label htmlFor="file-upload" className="mb-3 block text-lg font-semibold text-gray-700">
               ① オークション出品票PDF
@@ -76,10 +83,8 @@ export default function Home() {
             <input id="file-upload" type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} className="block w-full text-sm text-gray-500 file:mr-4 file:rounded-full file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:font-semibold file:text-blue-700 hover:file:bg-blue-100" />
           </div>
 
-          {/* パラメータ入力エリア */}
           <div className="rounded-lg border border-gray-200 p-6">
             <h2 className="mb-4 block text-lg font-semibold text-gray-700">② 価値算定パラメータ</h2>
-            {/* ▼▼▼ グリッドの列数を増やし、新しい入力欄を追加 ▼▼▼ */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
               <div>
                 <label htmlFor="engine_per_kg" className="block text-sm font-medium text-gray-700">エンジン単価 (円/kg)</label>
@@ -106,13 +111,12 @@ export default function Home() {
                 <input type="number" name="catalyst_price" value={params.catalyst_price} onChange={handleParamChange} className="mt-1 block w-full rounded-md border-gray-300 p-2 shadow-sm" />
               </div>
               <div>
-                <label htmlFor="transport_cost" className="block text-sm font-medium text-gray-700">輸送等諸経費 (円)</label>
+                <label htmlFor="transport_cost" className="block text-sm font-medium text-gray-700">輸送費 (円)</label>
                 <input type="number" name="transport_cost" value={params.transport_cost} onChange={handleParamChange} className="mt-1 block w-full rounded-md border-gray-300 p-2 shadow-sm" />
               </div>
             </div>
           </div>
 
-          {/* 実行ボタン */}
           <button type="submit" disabled={!file || loading} className="w-full rounded-lg bg-blue-600 px-4 py-3 text-base font-bold text-white shadow-md hover:bg-blue-700 disabled:bg-gray-400">
             {loading ? '処理中...' : '価値を算定してレポート出力'}
           </button>
