@@ -36,7 +36,7 @@ class PDF(FPDF):
             self.set_font('Arial', '', 12)
     def header(self):
         self.set_font('ipaexg', 'B', 15)
-        self.cell(0, 10, '車両価値算定レポート', 0, 1, 'C')
+        self.cell(0, 10, 'オークション仕入れ参考表', 0, 1, 'C')
         self.ln(5)
     def footer(self):
         self.set_y(-15)
@@ -47,62 +47,66 @@ app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 def generate_report_pdf(results: list) -> str:
+    """算定結果のリストから「最終版」の表形式PDFレポートを生成する"""
     pdf = PDF(orientation='L')
     pdf.add_page()
     
-    # --- ヘッダーに2列追加 ---
-    # --- すべての列を含むヘッダーを定義 ---
     headers = [
-        ("出品番号", 16), ("メーカー", 10), ("車名", 30), ("型式", 18),
-        ("E/G型式", 18), ("総重量", 12), 
-        ("E/G部品販売", 18), ("E/G価値", 16), 
-        ("プレス材", 14), ("甲山", 14), ("ハーネス", 14), 
-        ("アルミ", 14), ("触媒", 14), ("輸送費", 14), 
-        ("廃車価値", 16), ("過去相場(仮)", 14), ("入札対象", 10)
+        ("出品番号", 16), ("メーカー", 18), ("車名", 32), ("型式", 22),
+        ("E/G型式", 18), ("総重量", 12), ("E/G部品販売", 18), 
+        ("E/G価値", 18), ("プレス材", 16), ("甲山", 16), ("ハーネス", 16), 
+        ("アルミ", 14), ("触媒", 12), ("輸送費", 12), 
+        ("合計価値", 18), ("過去相場(仮)", 18), ("入札対象", 10)
     ]
     
+    # --- ヘッダー行を描画 ---
     pdf.set_font('ipaexg', 'B', 7)
     for header, width in headers:
         pdf.cell(width, 7, header, border=1, align='C')
     pdf.ln()
 
-    pdf.set_font('ipaexg', '', 6)
+    # --- データ行を描画 ---
     pdf.set_fill_color(240, 240, 240)
     
+    # ハイライトしたい列名をリストで定義
+    highlight_columns = ["合計価値", "入札対象"]
+
     for i, res in enumerate(results):
         if not res or "error" in res: continue
         
         info = res.get('vehicle_info', {})
         breakdown = res.get('breakdown', {})
         
-        # --- データ行に2列追加 ---
-        # --- すべての列に対応するデータ行を作成 ---
         row_data = [
-            res.get('auction_no', ''),
-            info.get('maker', ''),
-            info.get('car_name', ''),
-            info.get('model_code', ''),
-            info.get('engine_model', ''),
-            str(info.get('total_weight_kg', '')),
-            breakdown.get('エンジン部品販売', '×'), # ← 「エンジン部品販売」のデータ
+            res.get('auction_no', ''), info.get('maker', ''), info.get('car_name', ''),
+            info.get('model_code', ''), info.get('engine_model', ''), str(info.get('total_weight_kg', '')),
+            breakdown.get('エンジン部品販売', '×'),
             f"{breakdown.get('エンジン/ミッション', 0):,.0f}",
-            f"{breakdown.get('プレス材 (鉄)', 0):,.0f}",
-            f"{breakdown.get('甲山 (ミックスメタル)', 0):,.0f}",
-            f"{breakdown.get('ハーネス (銅)', 0):,.0f}",
-            f"{breakdown.get('アルミホイール', 0):,.0f}",
-            f"{breakdown.get('Catalyst', 0):,.0f}",
-            f"{breakdown.get('輸送費 (減算)', 0):,.0f}",
-            f"{res.get('total_value', 0):,.0f}",
-            f"{res.get('past_auction_price', 0):,.0f}", # ← 「過去相場」のデータ
-            res.get('bidding_recommendation', '')      # ← 「入札度」のデータ
+            f"{breakdown.get('プレス材 (鉄)', 0):,.0f}", f"{breakdown.get('甲山 (ミックスメタル)', 0):,.0f}",
+            f"{breakdown.get('ハーネス (銅)', 0):,.0f}", f"{breakdown.get('アルミホイール', 0):,.0f}",
+            f"{breakdown.get('Catalyst', 0):,.0f}", f"{breakdown.get('輸送費 (減算)', 0):,.0f}",
+            f"{res.get('total_value', 0):,.0f}", f"{res.get('past_auction_price', 0):,.0f}",
+            res.get('bidding_recommendation', '')
         ]
-        # あなたの元の正しいロジックを維持
-        should_fill = i % 2 != 1
         
-        for data, width in zip(row_data, [w for h, w in headers]):
-            pdf.cell(width, 6, str(data), border=1, fill=should_fill, align='C')
-        pdf.ln()
+        should_fill = i % 2 == 0
+        
+        for col_idx, (data, width) in enumerate(zip(row_data, [w for h, w in headers])):
+            
+            is_highlight_col = headers[col_idx][0] in highlight_columns
 
+            # ▼▼▼ 線の太さを変更するコードを削除し、フォント設定のみに変更 ▼▼▼
+            if is_highlight_col:
+                pdf.set_font('ipaexg', 'B', 7) # フォントを太字・少し大きく
+            else:
+                pdf.set_font('ipaexg', '', 6)  # 標準フォント
+
+            pdf.cell(width, 6, str(data), border=1, fill=should_fill, align='C')
+        
+        # 1行描画が終わったら、次の行のためにフォントを標準に戻し、改行する
+        pdf.set_font('ipaexg', '', 6)
+        pdf.ln()
+    
     output_path = os.path.join(tempfile.gettempdir(), f"report_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf")
     pdf.output(output_path)
     return output_path
