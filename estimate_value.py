@@ -41,13 +41,23 @@ def estimate_scrap_value(model_code_to_find: str, session: Session, custom_price
         engine_material_value = engine_weight * current_prices["engine_per_kg"]
         if not vehicle.engine_weight_kg:
             remarks.append("エンジン重量は車両総重量からの推定値")
-            
+
+    # ▼▼▼ ここからが修正箇所 ▼▼▼
+    # まず、販売実績があるか（部品として価値があるか）を判定
+    if engine_resale_value > 0:
+        breakdown["エンジン部品販売"] = "〇"
+    else:
+        breakdown["エンジン部品販売"] = "×"
+
+    # 次に、表示する価値を部品価値と素材価値の高い方で決定
+    # (この部分は元のロジックと同じです)
     if engine_resale_value > engine_material_value:
-        breakdown["エンジン/ミッション (部品推奨)"] = engine_resale_value
+        breakdown["エンジン/ミッション"] = engine_resale_value
         total_value += engine_resale_value
     else:
-        breakdown["エンジン (素材価値)"] = engine_material_value
+        breakdown["エンジン/ミッション"] = engine_material_value
         total_value += engine_material_value
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     # --- 重量ベースの価値を計算 ---
     if vehicle.total_weight_kg:

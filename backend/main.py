@@ -55,11 +55,13 @@ def generate_report_pdf(results: list) -> str:
     pdf = PDF(orientation='L')
     pdf.add_page()
     
+    # --- ヘッダーに「エンジン部品販売」を追加 ---
     headers = [
         ("出品番号", 20), ("メーカー", 20), ("車名", 35), ("型式", 25),
-        ("E/G型式", 20), ("総重量", 15), ("E/G価値", 20), 
-        ("プレス材", 20), ("甲山", 20), ("ハーネス", 20), 
-        ("アルミ", 18), ("触媒", 15), ("輸送費", 15), ("合計価値", 22)
+        ("E/G型式", 20), ("総重量", 15), 
+        ("エンジン部品販売", 22), ("E/G価値", 20), # ← 新しい列
+        ("プレス材", 18), ("甲山", 18), ("ハーネス", 18), 
+        ("アルミ", 18), ("触媒", 15), ("輸送費", 15), ("合計価値", 21)
     ]
     
     pdf.set_font('ipaexg', 'B', 7)
@@ -68,25 +70,24 @@ def generate_report_pdf(results: list) -> str:
     pdf.ln()
 
     pdf.set_font('ipaexg', '', 6)
-    
-    # ▼▼▼ ここからが修正箇所 ▼▼▼
-
-    # 1. 塗りつぶし用の色を設定 (薄いグレー)
     pdf.set_fill_color(240, 240, 240)
     
-    # 2. enumerateを使い、行番号(i)も一緒に取得する
     for i, res in enumerate(results):
         if not res or "error" in res: continue
         
+        info = res.get('vehicle_info', {})
         breakdown = res.get('breakdown', {})
+        
+        # --- データ行に「エンジン部品販売」の〇×を追加 ---
         row_data = [
             res.get('auction_no', ''),
-            res.get('maker', ''),
-            res.get('car_name', ''),
-            res.get('model_code', ''),
-            res.get('engine_model', ''),
-            str(res.get('total_weight_kg', '')),
-            f"{breakdown.get('エンジン/ミッション (部品推奨)', breakdown.get('エンジン (素材価値)', 0)):,.0f}",
+            info.get('maker', ''),
+            info.get('car_name', ''),
+            info.get('model_code', ''),
+            info.get('engine_model', ''),
+            str(info.get('total_weight_kg', '')),
+            breakdown.get('エンジン部品販売', '×'), # ← 新しいデータを取得
+            f"{breakdown.get('エンジン/ミッション (部品推奨)', breakdown.get('エンジン (素材価値)', breakdown.get('エンジン/ミッション', 0))):,.0f}",
             f"{breakdown.get('プレス材 (鉄)', 0):,.0f}",
             f"{breakdown.get('甲山 (ミックスメタル)', 0):,.0f}",
             f"{breakdown.get('ハーネス (銅)', 0):,.0f}",
@@ -96,16 +97,12 @@ def generate_report_pdf(results: list) -> str:
             f"{res.get('total_value', 0):,.0f}"
         ]
         
-        # 3. 行番号(i)が奇数なら背景を塗りつぶすフラグを立てる
         should_fill = i % 2 != 1
         
         for data, width in zip(row_data, [w for h, w in headers]):
-            # 4. fillパラメータにフラグを渡す
-            pdf.cell(width, 6, str(data), border=1, fill=should_fill)
+            pdf.cell(width, 6, str(data), border=1, fill=should_fill, align='C')
         pdf.ln()
     
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
     output_path = os.path.join(tempfile.gettempdir(), f"report_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf")
     pdf.output(output_path)
     return output_path
