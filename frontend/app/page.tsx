@@ -111,7 +111,7 @@ export default function Home() {
                 <input type="number" name="catalyst_price" value={params.catalyst_price} onChange={handleParamChange} className="mt-1 block w-full rounded-md border-gray-300 p-2 shadow-sm" />
               </div>
               <div>
-                <label htmlFor="transport_cost" className="block text-sm font-medium text-gray-700">輸送費 (円)</label>
+                <label htmlFor="transport_cost" className="block text-sm font-medium text-gray-700">輸送費等諸経費 (円)</label>
                 <input type="number" name="transport_cost" value={params.transport_cost} onChange={handleParamChange} className="mt-1 block w-full rounded-md border-gray-300 p-2 shadow-sm" />
               </div>
             </div>
