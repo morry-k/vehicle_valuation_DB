@@ -55,7 +55,7 @@ def generate_report_pdf(results: list) -> str:
         ("出品番号", 16), ("メーカー", 18), ("車名", 28), ("型式", 16),
         ("E/G型式", 16), ("総重量", 12), ("E/G部品販売", 16), 
         ("E/G価値", 14), ("プレス材", 14), ("甲山", 14), ("ハーネス", 14), 
-        ("アルミ", 14), ("触媒", 12), ("輸送費等", 12), 
+        ("アルミ", 14), ("触媒", 12),("その他", 12),  ("輸送費等", 12), 
         ("損益分岐額", 18), ("過去相場(仮)", 18), ("入札対象", 10)
     ]
     
@@ -84,7 +84,8 @@ def generate_report_pdf(results: list) -> str:
             f"{breakdown.get('エンジン/ミッション', 0):,.0f}",
             f"{breakdown.get('プレス材 (鉄)', 0):,.0f}", f"{breakdown.get('甲山 (ミックスメタル)', 0):,.0f}",
             f"{breakdown.get('ハーネス (銅)', 0):,.0f}", f"{breakdown.get('アルミホイール', 0):,.0f}",
-            f"{breakdown.get('Catalyst', 0):,.0f}", f"{breakdown.get('輸送費 (減算)', 0):,.0f}",
+            f"{breakdown.get('Catalyst', 0):,.0f}",  "0", # ← 「その他」の列に一旦0を入れる
+            f"{breakdown.get('輸送費 (減算)', 0):,.0f}",
             f"{res.get('total_value', 0):,.0f}", f"{res.get('past_auction_price', 0):,.0f}",
             res.get('bidding_recommendation', '')
         ]
