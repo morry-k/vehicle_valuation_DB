@@ -5,22 +5,24 @@ import axios from 'axios'
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null)
+  // パラメータのstateを新しい項目に合わせて更新
   const [params, setParams] = useState({
+    engine_per_kg: 0,
     press_per_kg: 0,
     kouzan_per_kg: 0,
+    harness_per_kg: 0,
+    aluminum_wheels_price: 0,
+    catalyst_price: 0,
     transport_cost: 0,
   })
   const [loading, setLoading] = useState(false)
 
-  // ページが読み込まれた時に、バックエンドから基本パラメータを取得する
   useEffect(() => {
     axios.get('http://localhost:8000/api/parameters')
-      .then(res => {
-        setParams(res.data)
-      })
+      .then(res => setParams(res.data))
       .catch(err => {
         console.error("パラメータの取得に失敗:", err)
-        alert("バックエンドとの接続に失敗しました。FastAPIサーバーが起動しているか確認してください。")
+        alert("バックエンドとの接続に失敗しました。")
       })
   }, [])
 
@@ -42,57 +44,80 @@ export default function Home() {
     formData.append('params_str', JSON.stringify(params));
 
     try {
-      // ★★★ 正式なAPIである /api/analyze-sheet を呼び出す ★★★
       const res = await axios.post('http://localhost:8000/api/analyze-sheet', formData, {
-        responseType: 'blob', // PDFを受け取るためにblobを指定
+        responseType: 'blob',
       });
-
-      // --- PDFダウンロード処理 ---
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement('a');
       link.href = url;
       link.setAttribute('download', 'valuation_report.pdf');
       document.body.appendChild(link);
-      link.click();
       link.parentNode?.removeChild(link);
-
     } catch (err) {
       console.error("アップロードまたは解析に失敗:", err);
-      alert("処理に失敗しました。バックエンドのターミナルでエラーを確認してください。");
+      alert("処理に失敗しました。");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main className="container mx-auto p-8">
-      <h1 className="text-3xl font-bold mb-6">車両価値算定ツール</h1>
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="p-6 border rounded-lg">
-          <h2 className="text-xl font-semibold mb-3">① オークション出品票PDF</h2>
-          <input type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-        </div>
-        <div className="p-6 border rounded-lg">
-          <h2 className="text-xl font-semibold mb-3">② 価値算定パラメータ</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label htmlFor="press_per_kg">プレス単価 (円/kg)</label>
-              <input type="number" name="press_per_kg" value={params.press_per_kg} onChange={handleParamChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" />
-            </div>
-            <div>
-              <label htmlFor="kouzan_per_kg">甲山単価 (円/kg)</label>
-              <input type="number" name="kouzan_per_kg" value={params.kouzan_per_kg} onChange={handleParamChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" />
-            </div>
-            <div>
-              <label htmlFor="transport_cost">輸送費 (円)</label>
-              <input type="number" name="transport_cost" value={params.transport_cost} onChange={handleParamChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" />
+    <main className="flex min-h-screen w-full items-center justify-center bg-gray-100 p-4">
+      <div className="w-full max-w-4xl rounded-2xl bg-white p-8 shadow-lg">
+        <h1 className="mb-8 text-center text-3xl font-bold text-gray-800">
+          オークション仕入れ支援ツール
+        </h1>
+        <form onSubmit={handleSubmit} className="space-y-8">
+          {/* PDFアップロード */}
+          <div className="rounded-lg border border-gray-200 p-6">
+            <label htmlFor="file-upload" className="mb-3 block text-lg font-semibold text-gray-700">
+              ① オークション出品票PDF
+            </label>
+            <input id="file-upload" type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} className="block w-full text-sm text-gray-500 file:mr-4 file:rounded-full file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:font-semibold file:text-blue-700 hover:file:bg-blue-100" />
+          </div>
+
+          {/* パラメータ入力エリア */}
+          <div className="rounded-lg border border-gray-200 p-6">
+            <h2 className="mb-4 block text-lg font-semibold text-gray-700">② 価値算定パラメータ</h2>
+            {/* ▼▼▼ グリッドの列数を増やし、新しい入力欄を追加 ▼▼▼ */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+              <div>
+                <label htmlFor="engine_per_kg" className="block text-sm font-medium text-gray-700">エンジン単価 (円/kg)</label>
+                <input type="number" step="0.1" name="engine_per_kg" value={params.engine_per_kg} onChange={handleParamChange} className="mt-1 block w-full rounded-md border-gray-300 p-2 shadow-sm" />
+              </div>
+              <div>
+                <label htmlFor="press_per_kg" className="block text-sm font-medium text-gray-700">プレス単価 (円/kg)</label>
+                <input type="number" step="0.1" name="press_per_kg" value={params.press_per_kg} onChange={handleParamChange} className="mt-1 block w-full rounded-md border-gray-300 p-2 shadow-sm" />
+              </div>
+              <div>
+                <label htmlFor="kouzan_per_kg" className="block text-sm font-medium text-gray-700">甲山単価 (円/kg)</label>
+                <input type="number" step="0.1" name="kouzan_per_kg" value={params.kouzan_per_kg} onChange={handleParamChange} className="mt-1 block w-full rounded-md border-gray-300 p-2 shadow-sm" />
+              </div>
+              <div>
+                <label htmlFor="harness_per_kg" className="block text-sm font-medium text-gray-700">ハーネス単価 (円/kg)</label>
+                <input type="number" step="0.1" name="harness_per_kg" value={params.harness_per_kg} onChange={handleParamChange} className="mt-1 block w-full rounded-md border-gray-300 p-2 shadow-sm" />
+              </div>
+              <div>
+                <label htmlFor="aluminum_wheels_price" className="block text-sm font-medium text-gray-700">アルミホイール (円)</label>
+                <input type="number" name="aluminum_wheels_price" value={params.aluminum_wheels_price} onChange={handleParamChange} className="mt-1 block w-full rounded-md border-gray-300 p-2 shadow-sm" />
+              </div>
+              <div>
+                <label htmlFor="catalyst_price" className="block text-sm font-medium text-gray-700">触媒 (円)</label>
+                <input type="number" name="catalyst_price" value={params.catalyst_price} onChange={handleParamChange} className="mt-1 block w-full rounded-md border-gray-300 p-2 shadow-sm" />
+              </div>
+              <div>
+                <label htmlFor="transport_cost" className="block text-sm font-medium text-gray-700">輸送等諸経費 (円)</label>
+                <input type="number" name="transport_cost" value={params.transport_cost} onChange={handleParamChange} className="mt-1 block w-full rounded-md border-gray-300 p-2 shadow-sm" />
+              </div>
             </div>
           </div>
-        </div>
-        <button type="submit" disabled={!file || loading} className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 disabled:bg-gray-400">
-          {loading ? '処理中...' : '価値を算定してレポート出力'}
-        </button>
-      </form>
+
+          {/* 実行ボタン */}
+          <button type="submit" disabled={!file || loading} className="w-full rounded-lg bg-blue-600 px-4 py-3 text-base font-bold text-white shadow-md hover:bg-blue-700 disabled:bg-gray-400">
+            {loading ? '処理中...' : '価値を算定してレポート出力'}
+          </button>
+        </form>
+      </div>
     </main>
   )
 }
