@@ -51,17 +51,15 @@ app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 def generate_report_pdf(results: list) -> str:
-    """算定結果のリストから「最終版」の表形式PDFレポートを生成する"""
-    pdf = PDF(orientation='L') # 用紙を横向きに設定
+    """算定結果のリストから「表形式」（ゼブラ）のPDFレポートを生成する"""
+    pdf = PDF(orientation='L')
     pdf.add_page()
     
-    # --- ▼▼▼ 表示したい列に合わせてヘッダーを定義 ▼▼▼ ---
     headers = [
         ("出品番号", 20), ("メーカー", 20), ("車名", 35), ("型式", 25),
-        ("E/G型式", 20), ("総重量", 15),
-        ("E/G価値", 20), ("プレス材", 20), ("甲山", 20),
-        ("ハーネス", 20), ("アルミ", 18), ("触媒", 15),
-        ("輸送費", 15), ("合計価値", 22)
+        ("E/G型式", 20), ("総重量", 15), ("E/G価値", 20), 
+        ("プレス材", 20), ("甲山", 20), ("ハーネス", 20), 
+        ("アルミ", 18), ("触媒", 15), ("輸送費", 15), ("合計価値", 22)
     ]
     
     pdf.set_font('ipaexg', 'B', 7)
@@ -69,22 +67,25 @@ def generate_report_pdf(results: list) -> str:
         pdf.cell(width, 7, header, border=1, align='C')
     pdf.ln()
 
-    # --- ▼▼▼ 表示したいデータを正しく抽出して行を作成 ▼▼▼ ---
     pdf.set_font('ipaexg', '', 6)
-    for res in results:
+    
+    # ▼▼▼ ここからが修正箇所 ▼▼▼
+
+    # 1. 塗りつぶし用の色を設定 (薄いグレー)
+    pdf.set_fill_color(240, 240, 240)
+    
+    # 2. enumerateを使い、行番号(i)も一緒に取得する
+    for i, res in enumerate(results):
         if not res or "error" in res: continue
         
-        # res辞書には、PDFの生データとDBからの補足情報がすべてマージされている
         breakdown = res.get('breakdown', {})
-        
-        # データを抽出（getの第二引数で、値がない場合は空文字''にする）
         row_data = [
             res.get('auction_no', ''),
             res.get('maker', ''),
             res.get('car_name', ''),
             res.get('model_code', ''),
             res.get('engine_model', ''),
-            str(res.get('total_weight_kg', '')), # 数値の可能性があるのでstrに変換
+            str(res.get('total_weight_kg', '')),
             f"{breakdown.get('エンジン/ミッション (部品推奨)', breakdown.get('エンジン (素材価値)', 0)):,.0f}",
             f"{breakdown.get('プレス材 (鉄)', 0):,.0f}",
             f"{breakdown.get('甲山 (ミックスメタル)', 0):,.0f}",
@@ -95,9 +96,15 @@ def generate_report_pdf(results: list) -> str:
             f"{res.get('total_value', 0):,.0f}"
         ]
         
+        # 3. 行番号(i)が奇数なら背景を塗りつぶすフラグを立てる
+        should_fill = i % 2 != 1
+        
         for data, width in zip(row_data, [w for h, w in headers]):
-            pdf.cell(width, 6, str(data), border=1)
+            # 4. fillパラメータにフラグを渡す
+            pdf.cell(width, 6, str(data), border=1, fill=should_fill)
         pdf.ln()
+    
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     output_path = os.path.join(tempfile.gettempdir(), f"report_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf")
     pdf.output(output_path)
