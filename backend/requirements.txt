@@ -1,3 +1,4 @@
+# backend/requirements.txt
 fastapi
 uvicorn
 python-multipart
@@ -8,3 +9,4 @@ sqlalchemy
 sqlmodel
 python-dotenv
 google-generativeai
+setuptools
