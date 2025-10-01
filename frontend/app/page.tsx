@@ -3,6 +3,9 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 
+// ▼▼▼ この一行を追加 ▼▼▼
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 export default function Home() {
   const [file, setFile] = useState<File | null>(null)
   const [params, setParams] = useState({
