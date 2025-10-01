@@ -17,7 +17,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    axios.get('http://localhost:8000/api/parameters')
+    axios.get(`${API_URL}/api/parameters`)
       .then(res => setParams(res.data))
       .catch(err => {
         console.error("パラメータの取得に失敗:", err)
@@ -43,7 +43,7 @@ export default function Home() {
     formData.append('params_str', JSON.stringify(params));
 
     try {
-      const res = await axios.post('http://localhost:8000/api/analyze-sheet', formData, {
+      const res = await axios.post(`${API_URL}/api/analyze-sheet`, formData, {
         responseType: 'blob',
       });
       const url = window.URL.createObjectURL(new Blob([res.data]));
