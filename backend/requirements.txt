@@ -3,3 +3,8 @@ uvicorn
 python-multipart
 fpdf2
 japanize-matplotlib
+pandas
+sqlalchemy
+sqlmodel
+python-dotenv
+google-generativeai
