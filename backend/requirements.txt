@@ -4,9 +4,9 @@ uvicorn
 python-multipart
 fpdf2
 japanize-matplotlib
+setuptools
 pandas
 sqlalchemy
 sqlmodel
 python-dotenv
-google-generativeai
-setuptools
+pdfplumber
