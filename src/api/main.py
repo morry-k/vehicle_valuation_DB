@@ -76,8 +76,8 @@ def generate_report_pdf(results: list) -> str:
     headers = [
         ("出品番号", 18), ("メーカー", 18), ("車名", 30), ("グレード", 30), 
         ("年式", 10), ("型式", 22), ("排気量", 15), ("車検", 18), 
-        ("走行", 15), ("色", 12), 
-        ("E/G販売", 18), ("E/G価値", 18), ("素材価値", 18), ("メモ", 40)
+        ("走行", 15), ("色", 12), ("総重量", 15), # ← 追加
+        ("E/G販売", 18), ("E/G価値", 18), ("素材価値", 18), ("メモ", 28)
     ]
 
     pdf.set_font('ipaexg', 'B', 7)
@@ -125,6 +125,7 @@ def generate_report_pdf(results: list) -> str:
             str(res.get('inspection_date', '')),
             str(res.get('mileage_km', '')),
             res.get('color', ''),
+            str(info.get('total_weight_kg', '')),
             breakdown.get('エンジン部品販売', '×'),
             f"{breakdown.get('エンジン/ミッション', 0):,.0f}",
             f"{material_value:,.0f}",
