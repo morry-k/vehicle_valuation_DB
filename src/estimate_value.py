@@ -20,6 +20,19 @@ def get_component_price(session: Session, item_name: str, vehicle: VehicleMaster
     default_price_key = item_name.lower().replace(" ", "_").replace("/", "_") + "_price"
     return VALUATION_PRICES.get(default_price_key, 0.0)
 
+def calculate_material_value(vehicle: VehicleMaster, current_prices: dict) -> float:
+    """
+    車両の素材価値（プレス材、甲山、ハーネスなど）の合計を計算する
+    """
+    if not vehicle.total_weight_kg:
+        return 0.0
+
+    press_value = (vehicle.total_weight_kg * WEIGHT_BASE_RATIOS["press"]) * current_prices.get("press_per_kg", 0)
+    kouzan_value = (vehicle.total_weight_kg * WEIGHT_BASE_RATIOS["kouzan"]) * current_prices.get("kouzan_per_kg", 0)
+    harness_value = (vehicle.total_weight_kg * WEIGHT_BASE_RATIOS["harness"]) * current_prices.get("harness_per_kg", 0)
+    
+    return press_value + kouzan_value + harness_value
+
 def estimate_scrap_value(model_code_to_find: str, session: Session, custom_prices: dict = None):
     """
     指定された型式の車両価値を見積もり、辞書として返す

@@ -13,7 +13,10 @@ COLUMN_BOUNDARIES = {
     "grade": (200, 300),
     "year": (300, 352),
     "model_code": (352, 400),
-    "mileage_km": (400, 456),
+    "displacement_cc": (400, 453), # 「排気量」
+    "inspection_date": (453, 486), # 「車検」
+    "mileage_km": (486, 515),      # 「走行」
+    "color": (515, 548),          # 「色」
 }
 
 def extract_vehicles_from_pdf(pdf_path: str) -> List[Dict]:

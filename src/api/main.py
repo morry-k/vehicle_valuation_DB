@@ -74,13 +74,12 @@ def generate_report_pdf(results: list) -> str:
         session.close()
 
     headers = [
-        ("出品番号", 16), ("メーカー", 18), ("車名", 28), ("型式", 18),
-        ("E/G型式", 18), ("総重量", 12), ("E/G部品販売", 18), 
-        ("E/G価値", 16), ("プレス材", 16), ("甲山", 16), ("ハーネス", 16), 
-        ("アルミ", 14), ("触媒", 12),("その他", 12),  ("輸送費等", 12), 
-        ("損益分岐額", 18), ("過去相場(仮)", 18), ("入札対象", 10)
+        ("出品番号", 18), ("メーカー", 18), ("車名", 30), ("グレード", 30), 
+        ("年式", 10), ("型式", 22), ("排気量", 15), ("車検", 18), 
+        ("走行", 15), ("色", 12), 
+        ("E/G販売", 18), ("E/G価値", 18), ("素材価値", 18), ("メモ", 40)
     ]
-    
+
     pdf.set_font('ipaexg', 'B', 7)
     for header, width in headers:
         pdf.cell(width, 7, header, border=1, align='C')
@@ -96,6 +95,13 @@ def generate_report_pdf(results: list) -> str:
         info = res.get('vehicle_info', {})
         breakdown = res.get('breakdown', {})
         model_code = info.get('model_code', '')
+
+        # 素材価値の合計を計算
+        material_value = (
+            breakdown.get('プレス材 (鉄)', 0) +
+            breakdown.get('甲山 (ミックスメタル)', 0) +
+            breakdown.get('ハーネス (銅)', 0)
+        )
         
         # --- 2. 現在の行が注目車種かどうかを判定 ---
         is_target = model_code in target_model_set
@@ -109,17 +115,22 @@ def generate_report_pdf(results: list) -> str:
             should_fill = True
         
         row_data = [
-            res.get('auction_no', ''), info.get('maker', ''), info.get('car_name', ''),
-            info.get('model_code', ''), info.get('engine_model', ''), str(info.get('total_weight_kg', '')),
+            res.get('auction_no', ''),
+            info.get('maker', ''),
+            info.get('car_name', ''),
+            res.get('grade', ''),
+            info.get('year', ''),
+            info.get('model_code', ''),
+            str(res.get('displacement_cc', '')),
+            str(res.get('inspection_date', '')),
+            str(res.get('mileage_km', '')),
+            res.get('color', ''),
             breakdown.get('エンジン部品販売', '×'),
             f"{breakdown.get('エンジン/ミッション', 0):,.0f}",
-            f"{breakdown.get('プレス材 (鉄)', 0):,.0f}", f"{breakdown.get('甲山 (ミックスメタル)', 0):,.0f}",
-            f"{breakdown.get('ハーネス (銅)', 0):,.0f}", f"{breakdown.get('アルミホイール', 0):,.0f}",
-            f"{breakdown.get('Catalyst', 0):,.0f}",  "0",
-            f"{breakdown.get('輸送費 (減算)', 0):,.0f}",
-            f"{res.get('total_value', 0):,.0f}", f"{res.get('past_auction_price', 0):,.0f}",
-            res.get('bidding_recommendation', '')
+            f"{material_value:,.0f}",
+            '' # メモ欄のデータを空にする
         ]
+        
         
         for col_idx, (data, width) in enumerate(zip(row_data, [w for h, w in headers])):
             is_highlight_col = headers[col_idx][0] in highlight_columns
