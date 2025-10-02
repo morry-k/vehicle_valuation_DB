@@ -46,7 +46,18 @@ class PDF(FPDF):
         self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+# --- ▼▼▼ このCORS設定ブロックを修正 ▼▼▼ ---
+origins = [
+    "http://localhost:3000", # ローカル開発環境用
+    "https://vehicle-valuation-db.vercel.app", # Vercelの本番環境用
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 def generate_report_pdf(results: list) -> str:
     """算定結果のリストから「最終版」の表形式PDFレポートを生成する"""
