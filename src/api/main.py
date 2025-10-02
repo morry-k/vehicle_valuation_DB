@@ -23,6 +23,7 @@ from src.data_processing.pdf_parser import extract_vehicles_from_pdf
 from src.utils import normalize_text
 from src.estimate_value import estimate_scrap_value
 from src.db.database import SessionLocal
+from src.db.models import TargetModel # ★ TargetModelをインポート
 
 class PDF(FPDF):
     def __init__(self, *args, **kwargs):
@@ -64,24 +65,29 @@ def generate_report_pdf(results: list) -> str:
     pdf = PDF(orientation='L')
     pdf.add_page()
     
+    # --- 1. DBから注目車種リストを取得 ---
+    session = SessionLocal()
+    try:
+        target_models_query = session.query(TargetModel.model_code).all()
+        target_model_set = {code for (code,) in target_models_query}
+    finally:
+        session.close()
+
     headers = [
-        ("出品番号", 16), ("メーカー", 18), ("車名", 28), ("型式", 16),
-        ("E/G型式", 16), ("総重量", 12), ("E/G部品販売", 16), 
-        ("E/G価値", 14), ("プレス材", 14), ("甲山", 14), ("ハーネス", 14), 
+        ("出品番号", 16), ("メーカー", 18), ("車名", 28), ("型式", 18),
+        ("E/G型式", 18), ("総重量", 12), ("E/G部品販売", 18), 
+        ("E/G価値", 16), ("プレス材", 16), ("甲山", 16), ("ハーネス", 16), 
         ("アルミ", 14), ("触媒", 12),("その他", 12),  ("輸送費等", 12), 
         ("損益分岐額", 18), ("過去相場(仮)", 18), ("入札対象", 10)
     ]
     
-    # --- ヘッダー行を描画 ---
     pdf.set_font('ipaexg', 'B', 7)
     for header, width in headers:
         pdf.cell(width, 7, header, border=1, align='C')
     pdf.ln()
 
     # --- データ行を描画 ---
-    pdf.set_fill_color(240, 240, 240)
-    
-    # ハイライトしたい列名をリストで定義
+    pdf.set_fill_color(220, 220, 220) # グレーアウト用の色
     highlight_columns = ["損益分岐額", "入札対象"]
 
     for i, res in enumerate(results):
@@ -89,6 +95,18 @@ def generate_report_pdf(results: list) -> str:
         
         info = res.get('vehicle_info', {})
         breakdown = res.get('breakdown', {})
+        model_code = info.get('model_code', '')
+        
+        # --- 2. 現在の行が注目車種かどうかを判定 ---
+        is_target = model_code in target_model_set
+
+        # --- 3. 判定結果に応じてスタイルを設定 ---
+        if is_target:
+            pdf.set_text_color(0, 0, 0)
+            should_fill = False
+        else:
+            pdf.set_text_color(150, 150, 150)
+            should_fill = True
         
         row_data = [
             res.get('auction_no', ''), info.get('maker', ''), info.get('car_name', ''),
@@ -97,29 +115,26 @@ def generate_report_pdf(results: list) -> str:
             f"{breakdown.get('エンジン/ミッション', 0):,.0f}",
             f"{breakdown.get('プレス材 (鉄)', 0):,.0f}", f"{breakdown.get('甲山 (ミックスメタル)', 0):,.0f}",
             f"{breakdown.get('ハーネス (銅)', 0):,.0f}", f"{breakdown.get('アルミホイール', 0):,.0f}",
-            f"{breakdown.get('Catalyst', 0):,.0f}",  "0", # ← 「その他」の列に一旦0を入れる
+            f"{breakdown.get('Catalyst', 0):,.0f}",  "0",
             f"{breakdown.get('輸送費 (減算)', 0):,.0f}",
             f"{res.get('total_value', 0):,.0f}", f"{res.get('past_auction_price', 0):,.0f}",
             res.get('bidding_recommendation', '')
         ]
         
-        should_fill = i % 2 == 0
-        
         for col_idx, (data, width) in enumerate(zip(row_data, [w for h, w in headers])):
-            
             is_highlight_col = headers[col_idx][0] in highlight_columns
 
-            # ▼▼▼ 線の太さを変更するコードを削除し、フォント設定のみに変更 ▼▼▼
-            if is_highlight_col:
-                pdf.set_font('ipaexg', 'B', 7) # フォントを太字・少し大きく
+            if is_highlight_col and is_target: # 注目車種の、ハイライト列のみ太字にする
+                pdf.set_font('ipaexg', 'B', 7)
             else:
-                pdf.set_font('ipaexg', '', 6)  # 標準フォント
+                pdf.set_font('ipaexg', '', 6)
 
             pdf.cell(width, 6, str(data), border=1, fill=should_fill, align='C')
         
-        # 1行描画が終わったら、次の行のためにフォントを標準に戻し、改行する
-        pdf.set_font('ipaexg', '', 6)
         pdf.ln()
+
+    # レポート全体のスタイルをリセット
+    pdf.set_text_color(0, 0, 0)
     
     output_path = os.path.join(tempfile.gettempdir(), f"report_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf")
     pdf.output(output_path)

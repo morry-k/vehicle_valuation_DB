@@ -52,3 +52,7 @@ class SalesHistory(SQLModel, table=True):
     buyer_location: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
+# ▼▼▼ このモデル定義をファイル末尾に追加 ▼▼▼
+class TargetModel(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    model_code: str = Field(unique=True, index=True)
