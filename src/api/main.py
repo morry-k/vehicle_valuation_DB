@@ -9,6 +9,7 @@ import japanize_matplotlib
 import random
 
 # プロジェクトのルートディレクトリをPythonの検索パスに追加
+# これにより、'src'フォルダをトップレベルとして認識できるようになる
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 from fastapi import FastAPI, UploadFile, File, Form
@@ -16,14 +17,12 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fpdf import FPDF
 
-# --- ▼▼▼ インポートのパスをすべて src からに統一 ---
+# --- ▼▼▼ インポートのパスをすべて src からに統一 ▼▼▼ ---
 from src.config import VALUATION_PRICES
 from src.data_processing.pdf_parser import extract_vehicles_from_pdf
 from src.utils import normalize_text
 from src.estimate_value import estimate_scrap_value
 from src.db.database import SessionLocal
-
-# ...
 
 class PDF(FPDF):
     def __init__(self, *args, **kwargs):
