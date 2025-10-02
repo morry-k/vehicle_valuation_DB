@@ -1,9 +1,12 @@
 import sys
 from sqlalchemy.orm import sessionmaker, Session
-from src.db.database import engine
+# --- インポート文をすべて src からの絶対パスに統一 ---
+from src.db.database import engine, SessionLocal
 from src.db.models import VehicleMaster, ComponentValue
 from src.config import VALUATION_PRICES, WEIGHT_BASE_RATIOS
 from src.db.database import SessionLocal # SessionLocalを直接インポート
+
+
 
 def get_component_price(session: Session, item_name: str, vehicle: VehicleMaster) -> float:
     # ... (このヘルパー関数は変更の必要はありません) ...
