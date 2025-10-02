@@ -19,40 +19,50 @@ COLUMN_BOUNDARIES = {
     "color": (515, 548),          # 「色」
 }
 
-def extract_vehicles_from_pdf(pdf_path: str) -> List[Dict]:
+def extract_vehicles_from_pdf(pdf_path: str) -> list:
     """
-    単一のPDFファイルから車両情報のリストを抽出する
+    単語を行にグループ化するロジックを改善した最終版パーサー
     """
-    vehicles = []
-    try:
-        with pdfplumber.open(pdf_path) as pdf:
-            for page in pdf.pages:
-                # ページ上のすべての単語とその座標を取得
-                words = page.extract_words(x_tolerance=2, y_tolerance=2, keep_blank_chars=True)
+    all_vehicles = []
+    with pdfplumber.open(pdf_path) as pdf:
+        
+        # 集計表である最後の3ページを除外
+        pages_to_process = pdf.pages[:-3] 
+        
+        for page_num, page in enumerate(pages_to_process):
+            print(f"  - ページ {page_num + 1} を解析中...")
+            
+            # 1. ページ上のすべての単語とその座標を取得
+            words = page.extract_words(x_tolerance=2, y_tolerance=3)
+            if not words:
+                continue
+
+            # 2. 単語をy座標（top）を基準に行ごとにグループ化する
+            lines = {}
+            for word in words:
+                # y座標を5ピクセルの範囲で丸めて、同じ行の単語をグループ化
+                line_key = round(word['top'] / 5) * 5
+                if line_key not in lines:
+                    lines[line_key] = []
+                lines[line_key].append(word)
+
+            # 3. 各行の単語を、COLUMN_BOUNDARIESに基づいて列に割り当てる
+            for line_key in sorted(lines.keys()):
+                line_words = sorted(lines[line_key], key=lambda w: w['x0'])
+                row_data = {key: [] for key in COLUMN_BOUNDARIES.keys()}
                 
-                # 単語を行ごとにグループ化
-                lines = {}
-                for word in words:
-                    # 単語の中心のy座標をキーとして行をまとめる
-                    y_center = (word['top'] + word['bottom']) / 2
-                    if y_center not in lines:
-                        lines[y_center] = []
-                    lines[y_center].append(word)
-
-                # 各行から列データを抽出
-                for y_center in sorted(lines.keys()):
-                    line_words = lines[y_center]
-                    row_data = {}
-                    
+                for word in line_words:
                     for col_name, (x0, x1) in COLUMN_BOUNDARIES.items():
-                        col_words = [w['text'] for w in line_words if (w['x0'] + w['x1']) / 2 >= x0 and (w['x0'] + w['x1']) / 2 < x1]
-                        row_data[col_name] = "".join(col_words)
+                        if word['x0'] >= x0 and word['x1'] <= x1:
+                            row_data[col_name].append(word['text'])
+                            break
+                
+                final_row = {key: " ".join(value) for key, value in row_data.items()}
 
-                    # ヘッダー行や空行でないことを確認（出品番号があればデータ行とみなす）
-                    if row_data.get("auction_no") and len(row_data["auction_no"]) > 2:
-                        vehicles.append(row_data)
-
-    except Exception as e:
-        print(f"Error processing {pdf_path}: {e}")
-    
-    return vehicles
+                if final_row.get("auction_no") and final_row["auction_no"].strip().isdigit():
+                    all_vehicles.append(final_row)
+                else:
+                    if any(val.strip() for val in final_row.values()):
+                        print(f"  -> [除外] {final_row}")
+                    
+    return all_vehicles

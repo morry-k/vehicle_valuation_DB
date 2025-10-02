@@ -178,6 +178,8 @@ async def analyze_sheet_endpoint(file: UploadFile = File(...), params_str: str =
         all_vehicles = extract_vehicles_from_pdf(temp_pdf_path)
         df = pd.DataFrame(all_vehicles)
         df = df[df['maker'] != 'メーカー'].copy()
+        
+        # 正規化処理はそのまま
         for col in ['maker', 'car_name', 'model_code']:
             if col in df.columns:
                 df[col] = df[col].apply(normalize_text)
@@ -186,9 +188,16 @@ async def analyze_sheet_endpoint(file: UploadFile = File(...), params_str: str =
         session = SessionLocal()
         try:
             print(f"PDFから {len(df)} 件の車両を検出。価値算定を開始します...")
+            
+            # ▼▼▼ drop_duplicates() をやめ、dfの全行をループする ▼▼-▼
             for index, row in df.iterrows():
                 model_code = row.get('model_code')
-                if not model_code: continue
+                
+                # 型式が空の行は、レポートにも表示させたいのでスキップしない
+                if not model_code:
+                    # 価値算定はできないので、PDFの生データだけを結果に追加
+                    results.append(row.to_dict())
+                    continue
                 
                 valuation = estimate_scrap_value(model_code, session, custom_prices=params)
                 
@@ -197,14 +206,11 @@ async def analyze_sheet_endpoint(file: UploadFile = File(...), params_str: str =
                 if valuation and 'vehicle_info' in valuation:
                     final_record.update(valuation.get('vehicle_info', {}))
 
-
-                # ▼▼▼ 新しいロジックを追加 ▼▼▼
+                # ... (過去相場と入札度のロジック) ...
                 past_auction_price = random.randint(30000, 110000)
                 final_record['past_auction_price'] = past_auction_price
-
                 total_value = valuation.get('total_value', 0)
                 diff = total_value - past_auction_price
-                
                 if diff >= 10000:
                     bidding_recommendation = "〇"
                 elif diff > -10000:
@@ -212,8 +218,7 @@ async def analyze_sheet_endpoint(file: UploadFile = File(...), params_str: str =
                 else:
                     bidding_recommendation = "×"
                 final_record['bidding_recommendation'] = bidding_recommendation
-                # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
+                
                 results.append(final_record)
         finally:
             session.close()
