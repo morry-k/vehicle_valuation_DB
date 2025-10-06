@@ -21,18 +21,15 @@ COLUMN_BOUNDARIES = {
 
 def extract_vehicles_from_pdf(pdf_path: str) -> list:
     """
-    単語を行にグループ化するロジックを改善した最終版パーサー
+    テーブル自動認識と単語ごとの座標チェックを組み合わせた最終版の抽出ロジック
     """
     all_vehicles = []
+    
     with pdfplumber.open(pdf_path) as pdf:
-        
-        # 集計表である最後の3ページを除外
-        pages_to_process = pdf.pages[:-3] 
-        
-        for page_num, page in enumerate(pages_to_process):
+        for page_num, page in enumerate(pdf.pages):
             print(f"  - ページ {page_num + 1} を解析中...")
             
-            # 1. ページ上のすべての単語とその座標を取得
+            # 1. まず、ページ上のすべての単語とその座標を取得
             words = page.extract_words(x_tolerance=2, y_tolerance=3)
             if not words:
                 continue
@@ -40,7 +37,6 @@ def extract_vehicles_from_pdf(pdf_path: str) -> list:
             # 2. 単語をy座標（top）を基準に行ごとにグループ化する
             lines = {}
             for word in words:
-                # y座標を5ピクセルの範囲で丸めて、同じ行の単語をグループ化
                 line_key = round(word['top'] / 5) * 5
                 if line_key not in lines:
                     lines[line_key] = []
@@ -57,12 +53,16 @@ def extract_vehicles_from_pdf(pdf_path: str) -> list:
                             row_data[col_name].append(word['text'])
                             break
                 
+                # 辞書のリストを文字列に結合
                 final_row = {key: " ".join(value) for key, value in row_data.items()}
 
+                # ▼▼▼ ここのif文にelseを追加 ▼▼▼
                 if final_row.get("auction_no") and final_row["auction_no"].strip().isdigit():
                     all_vehicles.append(final_row)
                 else:
-                    if any(val.strip() for val in final_row.values()):
+                    # もし有効な行でないと判断された場合、その行の内容をターミナルに表示
+                    # ただし、完全に空の行は無視する
+                    if any(final_row.values()):
                         print(f"  -> [除外] {final_row}")
                     
     return all_vehicles
