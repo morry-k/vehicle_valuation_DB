@@ -72,11 +72,13 @@ def generate_report_pdf(results: list) -> str:
     finally:
         session.close()
 
+    # ▼▼▼ headersリストの定義を修正 ▼▼▼
+    # 「色」を削除し、「総重量」「シフト」「評価点」を追加
     headers = [
         ("出品番号", 18), ("メーカー", 18), ("車名", 30), ("グレード", 30), 
         ("年式", 10), ("型式", 22), ("排気量", 15), ("車検", 18), 
-        ("走行", 15), ("色", 12), ("総重量", 15),
-        ("E/G販売", 18), ("E/G価値", 18), ("素材価値", 18), ("メモ", 28)
+        ("走行", 12), ("シフト", 12), ("評価点", 12), ("総重量", 12),
+        ("E/G販売", 12), ("E/G価値", 12), ("素材価値", 12), ("メモ", 28)
     ]
     
     pdf.set_font('ipaexg', 'B', 7)
@@ -90,10 +92,9 @@ def generate_report_pdf(results: list) -> str:
     for i, res in enumerate(results):
         if not res or "error" in res: continue
         
-        # info変数は補助的に使うが、メインはresから取得する
         info = res.get('vehicle_info', {})
         breakdown = res.get('breakdown', {})
-        model_code = res.get('model_code', '') # ← infoからではなくresから取得
+        model_code = res.get('model_code', '')
 
         material_value = (
             breakdown.get('プレス材 (鉄)', 0) +
@@ -110,7 +111,12 @@ def generate_report_pdf(results: list) -> str:
             pdf.set_text_color(150, 150, 150)
             should_fill = True
         
-        # ▼▼▼ ここのデータ取得元を `res` に統一する ▼▼▼
+        # ▼▼▼ 2つの評価点を結合するロジックを追加 ▼▼▼
+        score = res.get('evaluation_score', '')
+        interior = res.get('evaluation_interior', '')
+        evaluation_text = f"{score} / {interior}" if score and interior else score or interior
+        
+        # ▼▼▼ row_dataリストの定義を修正 ▼▼▼
         row_data = [
             res.get('auction_no', ''),
             res.get('maker', ''),
@@ -121,8 +127,9 @@ def generate_report_pdf(results: list) -> str:
             str(res.get('displacement_cc', '')),
             str(res.get('inspection_date', '')),
             str(res.get('mileage_km', '')),
-            res.get('color', ''),
-            str(res.get('total_weight_kg', '')), # DBにない場合は空文字になる
+            res.get('shift', ''),
+            evaluation_text,
+            str(res.get('total_weight_kg', '')),
             breakdown.get('エンジン部品販売', '×'),
             f"{breakdown.get('エンジン/ミッション', 0):,.0f}",
             f"{material_value:,.0f}",
@@ -130,8 +137,6 @@ def generate_report_pdf(results: list) -> str:
         ]
         
         for col_idx, (data, width) in enumerate(zip(row_data, [w for h, w in headers])):
-            # ... (ハイライト処理は変更なし) ...
-
             pdf.cell(width, 6, str(data), border=1, fill=should_fill, align='C')
         
         pdf.ln()
@@ -141,6 +146,7 @@ def generate_report_pdf(results: list) -> str:
     output_path = os.path.join(tempfile.gettempdir(), f"report_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf")
     pdf.output(output_path)
     return output_path
+
 
 @app.get("/api/parameters")
 def get_parameters():

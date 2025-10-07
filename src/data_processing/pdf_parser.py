@@ -17,6 +17,10 @@ COLUMN_BOUNDARIES = {
     "inspection_date": (453, 486), # 「車検」
     "mileage_km": (486, 515),      # 「走行」
     "color": (515, 548),          # 「色」
+    "shift": (548, 578),      # ▲ 「シフト」を追加
+    #"space": (578, 720),      # ▲ 「シフト」を追加
+    "evaluation_score": (720, 750),   # 数字部分 (3.5 など)
+    "evaluation_interior": (720, 750), # 内装評価 (B, C など)
 }
 
 def extract_vehicles_from_pdf(pdf_path: str) -> list:
