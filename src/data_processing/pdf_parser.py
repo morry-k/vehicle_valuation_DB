@@ -23,13 +23,49 @@ COLUMN_BOUNDARIES = {
     "evaluation_interior": (720, 750), # 内装評価 (B, C など)
 }
 
+def extract_header_info(page: pdfplumber.page.Page) -> dict:
+    """PDFのページ上部からヘッダー情報（会場名、日付、コーナー名など）を抽出する"""
+    header_area = page.crop((0, 0, page.width, 50))
+    header_text = header_area.extract_text(x_tolerance=2, y_tolerance=2)
+    
+    if not header_text:
+        return {}
+        
+    parts = header_text.split()
+    corner_name = ""
+    # "【コーナー別出品車リスト】" という文字列の次にある単語をコーナー名として取得
+    try:
+        marker_index = parts.index("【コーナー別出品車リスト】")
+        if len(parts) > marker_index + 1:
+            corner_name = parts[marker_index + 1]
+    except ValueError:
+        corner_name = "" # マーカーが見つからない場合は空にする
+
+    header_info = {
+        "auction_round": parts[0] if len(parts) > 0 else '',
+        "auction_date": parts[2] if len(parts) > 2 else '',
+        "auction_venue": parts[3] if len(parts) > 3 else '',
+        "auction_corner": corner_name, # 抽出したコーナー名を追加
+    }
+    return header_info
+
+
 def extract_vehicles_from_pdf(pdf_path: str) -> list:
     """
     テーブル自動認識と単語ごとの座標チェックを組み合わせた最終版の抽出ロジック
     """
+    """PDFからヘッダー情報と車両情報を抽出する"""
     all_vehicles = []
+    header_info = {}
     
     with pdfplumber.open(pdf_path) as pdf:
+        if not pdf.pages:
+            return {}, []
+
+        # --- 最初のページからヘッダー情報を取得 ---
+        first_page = pdf.pages[0]
+        header_info = extract_header_info(first_page)
+        
         for page_num, page in enumerate(pdf.pages):
             print(f"  - ページ {page_num + 1} を解析中...")
             
@@ -69,4 +105,4 @@ def extract_vehicles_from_pdf(pdf_path: str) -> list:
                     if any(final_row.values()):
                         print(f"  -> [除外] {final_row}")
                     
-    return all_vehicles
+    return header_info, all_vehicles

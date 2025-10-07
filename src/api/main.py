@@ -26,9 +26,11 @@ from src.db.database import SessionLocal
 from src.db.models import TargetModel # ★ TargetModelをインポート
 
 class PDF(FPDF):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, header_info=None, *args, **kwargs): # ← ★ 1. header_info を受け取る
         super().__init__(*args, **kwargs)
+        self.header_info = header_info or {} # ← ★ 2. 受け取った情報をselfに保存
         try:
+            # フォント設定は変更なし
             font_dir = os.path.dirname(japanize_matplotlib.__file__)
             font_path = os.path.join(font_dir, 'fonts', 'ipaexg.ttf')
             self.add_font('ipaexg', '', font_path, uni=True)
@@ -37,14 +39,29 @@ class PDF(FPDF):
         except Exception as e:
             print(f"フォントの読み込みに失敗しました: {e}")
             self.set_font('Arial', '', 12)
+
     def header(self):
+        # --- 受け取ったヘッダー情報を使って動的なタイトルを生成 ---
+        title = self.header_info.get("auction_venue", "車両価値算定レポート")
+        date = self.header_info.get("auction_date", "")
+        corner = self.header_info.get("auction_corner", "") # コーナー名を取得
+        
         self.set_font('ipaexg', 'B', 15)
-        self.cell(0, 10, 'オークション仕入れ参考表', 0, 1, 'C')
+        self.cell(0, 10, title, 0, 1, 'C')
+
+        # 日付とコーナー名をサブタイトルとして表示
+        subtitle = f"({date}開催分 / {corner}コーナー)" if date and corner else f"({date}開催分)" if date else ""
+        if subtitle:
+            self.set_font('ipaexg', '', 10)
+            self.cell(0, 7, subtitle, 0, 1, 'C')
+        
         self.ln(5)
+
     def footer(self):
         self.set_y(-15)
         self.set_font('ipaexg', '', 8)
         self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+
 
 app = FastAPI()
 # --- ▼▼▼ このCORS設定ブロックを修正 ▼▼▼ ---
@@ -60,11 +77,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def generate_report_pdf(results: list) -> str:
+def generate_report_pdf(results: list, header_info: dict) -> str: # ← ★引数に header_info を追加
     """算定結果のリストから「最終版」の表形式PDFレポートを生成する"""
-    pdf = PDF(orientation='L')
+    pdf = PDF(header_info=header_info, orientation='L') # PDFクラスにヘッダー情報を渡す
     pdf.add_page()
-    
+
     session = SessionLocal()
     try:
         target_models_query = session.query(TargetModel.model_code).all()
@@ -172,7 +189,7 @@ async def analyze_sheet_endpoint(file: UploadFile = File(...), params_str: str =
             temp_pdf.write(await file.read())
             temp_pdf_path = temp_pdf.name
 
-        all_vehicles = extract_vehicles_from_pdf(temp_pdf_path)
+        header_info, all_vehicles = extract_vehicles_from_pdf(temp_pdf_path)
         df = pd.DataFrame(all_vehicles)
         df = df[df['maker'] != 'メーカー'].copy()
         
@@ -220,7 +237,7 @@ async def analyze_sheet_endpoint(file: UploadFile = File(...), params_str: str =
         finally:
             session.close()
 
-        output_pdf_path = generate_report_pdf(results)
+        output_pdf_path = generate_report_pdf(results, header_info)
         return FileResponse(output_pdf_path, media_type='application/pdf', filename="valuation_report.pdf")
     finally:
         if temp_pdf_path and os.path.exists(temp_pdf_path):
