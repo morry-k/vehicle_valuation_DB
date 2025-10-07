@@ -125,7 +125,7 @@ def generate_report_pdf(results: list, header_info: dict) -> str: # ← ★引�
             pdf.set_text_color(0, 0, 0)
             should_fill = False
         else:
-            pdf.set_text_color(150, 150, 150)
+            pdf.set_text_color(100, 100, 100)
             should_fill = True
         
         # ▼▼▼ 2つの評価点を結合するロジックを追加 ▼▼▼
