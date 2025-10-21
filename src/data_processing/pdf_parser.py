@@ -50,11 +50,10 @@ def extract_header_info(page: pdfplumber.page.Page) -> dict:
     return header_info
 
 
-def extract_vehicles_from_pdf(pdf_path: str) -> list:
+def extract_vehicles_from_pdf(pdf_path: str) -> (dict, list):
     """
-    テーブル自動認識と単語ごとの座標チェックを組み合わせた最終版の抽出ロジック
+    「1行 = 1車種」のシンプルなロジックでPDFを解析する
     """
-    """PDFからヘッダー情報と車両情報を抽出する"""
     all_vehicles = []
     header_info = {}
     
@@ -62,47 +61,46 @@ def extract_vehicles_from_pdf(pdf_path: str) -> list:
         if not pdf.pages:
             return {}, []
 
-        # --- 最初のページからヘッダー情報を取得 ---
-        first_page = pdf.pages[0]
-        header_info = extract_header_info(first_page)
+        # --- ステップ1: ヘッダー情報を取得 ---
+        header_info = extract_header_info(pdf.pages[0])
         
-        for page_num, page in enumerate(pdf.pages):
+        pages_to_process = pdf.pages[:-3] if len(pdf.pages) > 3 else pdf.pages
+        
+        for page_num, page in enumerate(pages_to_process):
             print(f"  - ページ {page_num + 1} を解析中...")
             
-            # 1. まず、ページ上のすべての単語とその座標を取得
-            words = page.extract_words(x_tolerance=2, y_tolerance=3)
-            if not words:
-                continue
+            # --- ステップ2: ページ上のすべての単語を取得 ---
+            words = page.extract_words(x_tolerance=2, y_tolerance=2) # y_toleranceは小さくても良い
+            if not words: continue
 
-            # 2. 単語をy座標（top）を基準に行ごとにグループ化する
+            # --- ステップ3: 単語を行ごとにグループ化（近接行の結合ロジックは削除） ---
             lines = {}
             for word in words:
-                line_key = round(word['top'] / 5) * 5
+                # y座標を厳密に（1ピクセル単位で）丸めて、行をグループ化
+                line_key = round(word['top'])
                 if line_key not in lines:
                     lines[line_key] = []
                 lines[line_key].append(word)
 
-            # 3. 各行の単語を、COLUMN_BOUNDARIESに基づいて列に割り当てる
+            # --- ステップ4: 各行を列に割り当て ---
             for line_key in sorted(lines.keys()):
-                line_words = sorted(lines[line_key], key=lambda w: w['x0'])
-                row_data = {key: [] for key in COLUMN_BOUNDARIES.keys()}
+                line_words = sorted(lines[line_key], key=lambda w: w['x0']) # x座標でソート
                 
+                row_data = {key: [] for key in COLUMN_BOUNDARIES.keys()}
                 for word in line_words:
                     for col_name, (x0, x1) in COLUMN_BOUNDARIES.items():
-                        if word['x0'] >= x0 and word['x1'] <= x1:
+                        word_center = (word['x0'] + word['x1']) / 2
+                        if x0 <= word_center < x1:
                             row_data[col_name].append(word['text'])
                             break
                 
-                # 辞書のリストを文字列に結合
                 final_row = {key: " ".join(value) for key, value in row_data.items()}
 
-                # ▼▼▼ ここのif文にelseを追加 ▼▼▼
-                if final_row.get("auction_no") and final_row["auction_no"].strip().isdigit():
+                auction_no_val = final_row.get("auction_no", "").strip()
+                if auction_no_val and auction_no_val.isdigit():
                     all_vehicles.append(final_row)
                 else:
-                    # もし有効な行でないと判断された場合、その行の内容をターミナルに表示
-                    # ただし、完全に空の行は無視する
-                    if any(final_row.values()):
-                        print(f"  -> [除外] {final_row}")
+                    if any(val.strip() for val in final_row.values()):
+                        print(f"  -> [除外/フィルタ] {final_row}")
                     
     return header_info, all_vehicles

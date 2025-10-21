@@ -36,10 +36,21 @@ def calculate_material_value(vehicle: VehicleMaster, current_prices: dict) -> fl
 def estimate_scrap_value(model_code_to_find: str, session: Session, custom_prices: dict = None):
     """
     指定された型式の車両価値を見積もり、辞書として返す
+    DBに存在しない場合でも、空の情報を返す
     """
     vehicle = session.query(VehicleMaster).filter_by(model_code=model_code_to_find).first()
+    
+    # ▼▼▼ ここからが修正箇所 ▼▼▼
     if not vehicle:
-        return {"error": f"型式 '{model_code_to_find}' が車種辞書に見つかりません。"}
+        # DBに車種が見つからない場合、"error"を返すのではなく、
+        # 空のvehicle_infoと、価値0の結果を返す
+        return {
+            "vehicle_info": {"model_code": model_code_to_find}, # 型式だけは返す
+            "breakdown": {"エンジン部品販売": "×"},
+            "total_value": 0,
+            "remarks": ["DBに車種未登録"]
+        }
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     current_prices = VALUATION_PRICES.copy()
     if custom_prices:

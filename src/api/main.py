@@ -182,63 +182,82 @@ def get_parameters():
     
 @app.post("/api/analyze-sheet")
 async def analyze_sheet_endpoint(file: UploadFile = File(...), params_str: str = Form(...)):
-    params = json.loads(params_str)
-    temp_pdf_path = ""
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
-            temp_pdf.write(await file.read())
-            temp_pdf_path = temp_pdf.name
-
-        header_info, all_vehicles = extract_vehicles_from_pdf(temp_pdf_path)
-        df = pd.DataFrame(all_vehicles)
-        df = df[df['maker'] != 'メーカー'].copy()
-        
-        for col in ['maker', 'car_name', 'model_code']:
-            if col in df.columns:
-                df[col] = df[col].apply(normalize_text)
-        
-        results = []
-        session = SessionLocal()
+        params = json.loads(params_str)
+        temp_pdf_path = ""
         try:
-            print(f"PDFから {len(df)} 件の車両を検出。価値算定を開始します...")
-            for index, row in df.iterrows():
-                model_code = row.get('model_code')
-                
-                # まず、PDFの生データを final_record のベースとする
-                final_record = row.to_dict()
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
+                temp_pdf.write(await file.read())
+                temp_pdf_path = temp_pdf.name
 
-                if model_code:
-                    valuation = estimate_scrap_value(model_code, session, custom_prices=params)
+            header_info, all_vehicles = extract_vehicles_from_pdf(temp_pdf_path)
+            df = pd.DataFrame(all_vehicles)
+            df = df[df['maker'] != 'メーカー'].copy()
+            
+            for col in ['maker', 'car_name', 'model_code']:
+                if col in df.columns:
+                    df[col] = df[col].apply(normalize_text)
+            
+            results = []
+            session = SessionLocal()
+            try:
+                print(f"PDFから {len(df)} 件の車両を検出。価値算定を開始します...")
+                for index, row in df.iterrows():
                     
-                    # 価値算定が成功した場合のみ、結果をマージする
-                    if "error" not in valuation:
-                        final_record.update(valuation)
-                        if 'vehicle_info' in valuation:
-                            final_record.update(valuation.get('vehicle_info', {}))
-                
-                # 過去相場と入札度のロジック
-                past_auction_price = random.randint(30000, 110000)
-                final_record['past_auction_price'] = past_auction_price
-                
-                total_value = final_record.get('total_value', 0)
-                diff = total_value - past_auction_price
-                
-                if total_value == 0:
-                    bidding_recommendation = "?"
-                elif diff >= 10000:
-                    bidding_recommendation = "〇"
-                elif diff > -10000:
-                    bidding_recommendation = "△"
-                else:
-                    bidding_recommendation = "×"
-                final_record['bidding_recommendation'] = bidding_recommendation
-                
-                results.append(final_record)
-        finally:
-            session.close()
+                    # 1. まず、PDFから読み取った「生データ」を辞書にする
+                    pdf_row_data = row.to_dict()
+                    model_code = pdf_row_data.get('model_code')
 
-        output_pdf_path = generate_report_pdf(results, header_info)
-        return FileResponse(output_pdf_path, media_type='application/pdf', filename="valuation_report.pdf")
-    finally:
-        if temp_pdf_path and os.path.exists(temp_pdf_path):
-            os.unlink(temp_pdf_path)
+                    # 2. 価値算定を試みる (DBにない場合でもエラーではなく、空の情報が返る)
+                    valuation = {}
+                    if model_code:
+                        valuation = estimate_scrap_value(model_code, session, custom_prices=params)
+                    
+                    # 3. データをあなたのロジックでマージする
+                    db_info = valuation.get('vehicle_info', {})
+                    calculated_values = valuation.copy()
+                    calculated_values.pop('vehicle_info', None) 
+                    
+                    # ▼▼▼ あなたの完璧なロジック「PDF -> DB -> PDF」▼▼▼
+                    # 1. PDFをベースにし
+                    final_record = pdf_row_data.copy()
+                    # 2. DBの補足情報（重量など）で上書き（補完）し
+                    final_record.update(db_info)
+                    # 3. 最後にPDFの主要情報（年式など）で再度上書きする
+                    final_record.update(pdf_row_data)
+                    # 4. 算定した価値情報を追加する
+                    final_record.update(calculated_values)
+                    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+                    # 過去相場と入札度のロジック
+                    past_auction_price = random.randint(30000, 110000)
+                    final_record['past_auction_price'] = past_auction_price
+                    total_value = final_record.get('total_value', 0)
+                    diff = total_value - past_auction_price
+                    if total_value == 0:
+                        bidding_recommendation = "?"
+                    elif diff >= 10000:
+                        bidding_recommendation = "〇"
+                    elif diff > -10000:
+                        bidding_recommendation = "△"
+                    else:
+                        bidding_recommendation = "×"
+                    final_record['bidding_recommendation'] = bidding_recommendation
+                    
+                    results.append(final_record)
+            finally:
+                session.close()
+
+            output_pdf_path = generate_report_pdf(results, header_info)
+            return FileResponse(output_pdf_path, media_type='application/pdf', filename="valuation_report.pdf")
+        
+        finally:
+            if temp_pdf_path and os.path.exists(temp_pdf_path):
+                os.unlink(temp_pdf_path)
+    
+    except Exception as e:
+        print("\n" + "="*50)
+        print("バックエンドで予期せぬエラーが発生しました。")
+        traceback.print_exc()
+        print("="*50 + "\n")
+        return {"error": "Internal Server Error"}, 500
