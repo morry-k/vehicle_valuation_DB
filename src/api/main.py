@@ -98,6 +98,9 @@ def generate_report_pdf(results: list, header_info: dict) -> str: # ← ★引�
         ("E/G販売", 12), ("E/G価値", 12), ("素材価値", 12)
     ]
     
+    # 枠線の色を薄いグレー(220, 220, 220)に設定
+    pdf.set_draw_color(160, 160, 160)
+
     pdf.set_font('ipaexg', 'B', 7)
     for header, width in headers:
         pdf.cell(width, 7, header, border=1, align='L')
