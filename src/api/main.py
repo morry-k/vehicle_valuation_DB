@@ -92,15 +92,15 @@ def generate_report_pdf(results: list, header_info: dict) -> str: # ← ★引�
     # ▼▼▼ headersリストの定義を修正 ▼▼▼
     # 「色」を削除し、「総重量」「シフト」「評価点」を追加
     headers = [
-        ("出品番号", 18), ("メーカー", 18), ("車名", 30), ("グレード", 30), 
-        ("年式", 10), ("型式", 22), ("排気量", 15), ("車検", 18), 
+        ("出品番号", 18), ("メーカー", 18), ("車名", 37), ("グレード", 45), 
+        ("年式", 10), ("型式", 25), ("排気量", 15), ("車検", 23), 
         ("走行", 12), ("シフト", 12), ("評価点", 12), ("総重量", 12),
-        ("E/G販売", 12), ("E/G価値", 12), ("素材価値", 12), ("メモ", 28)
+        ("E/G販売", 12), ("E/G価値", 12), ("素材価値", 12)
     ]
     
     pdf.set_font('ipaexg', 'B', 7)
     for header, width in headers:
-        pdf.cell(width, 7, header, border=1, align='C')
+        pdf.cell(width, 7, header, border=1, align='L')
     pdf.ln()
 
     pdf.set_fill_color(220, 220, 220)
@@ -156,7 +156,7 @@ def generate_report_pdf(results: list, header_info: dict) -> str: # ← ★引�
         ]
         
         for col_idx, (data, width) in enumerate(zip(row_data, [w for h, w in headers])):
-            pdf.cell(width, 6, str(data), border=1, fill=should_fill, align='C')
+            pdf.cell(width, 6, str(data), border=1, fill=should_fill, align='L')
         
         pdf.ln()
 
