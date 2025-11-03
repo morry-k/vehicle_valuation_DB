@@ -64,7 +64,8 @@ def extract_vehicles_from_pdf(pdf_path: str) -> (dict, list):
         # --- ステップ1: ヘッダー情報を取得 ---
         header_info = extract_header_info(pdf.pages[0])
         
-        pages_to_process = pdf.pages[:-3] if len(pdf.pages) > 3 else pdf.pages
+        # ▼▼▼ 変更点：[:-3]を削除し、すべてのページを処理対象にする ▼▼▼
+        pages_to_process = pdf.pages
         
         for page_num, page in enumerate(pages_to_process):
             print(f"  - ページ {page_num + 1} を解析中...")
