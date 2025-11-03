@@ -119,7 +119,9 @@ def generate_report_pdf(results: list, header_info: dict) -> str: # ← ★引�
             breakdown.get('ハーネス (銅)', 0)
         )
         
-        is_target = model_code in target_model_set
+        # ▼▼▼ 判定ロジックを修正 ▼▼▼
+        # DBを検索する代わりに、resから判定結果を受け取る
+        is_target = res.get('is_target', False)
 
         if is_target:
             pdf.set_text_color(0, 0, 0)
@@ -179,7 +181,6 @@ def get_parameters():
         "transport_cost": 5000, # 輸送費は固定値として追加
     }
 
-    
 @app.post("/api/analyze-sheet")
 async def analyze_sheet_endpoint(file: UploadFile = File(...), params_str: str = Form(...)):
     try:
@@ -194,41 +195,47 @@ async def analyze_sheet_endpoint(file: UploadFile = File(...), params_str: str =
             df = pd.DataFrame(all_vehicles)
             df = df[df['maker'] != 'メーカー'].copy()
             
-            for col in ['maker', 'car_name', 'model_code']:
-                if col in df.columns:
-                    df[col] = df[col].apply(normalize_text)
-            
             results = []
             session = SessionLocal()
             try:
+                # ▼▼▼ 1. 注目車種リストを「先」に読み込む ▼▼▼
+                target_models_query = session.query(TargetModel.model_code).all()
+                target_model_set = {code for (code,) in target_models_query}
+                
                 print(f"PDFから {len(df)} 件の車両を検出。価値算定を開始します...")
                 for index, row in df.iterrows():
                     
                     # 1. まず、PDFから読み取った「生データ」を辞書にする
                     pdf_row_data = row.to_dict()
-                    model_code = pdf_row_data.get('model_code')
+                    original_model_code = pdf_row_data.get('model_code') # 例: "K13ｶｲ"
 
-                    # 2. 価値算定を試みる (DBにない場合でもエラーではなく、空の情報が返る)
-                    valuation = {}
-                    if model_code:
-                        valuation = estimate_scrap_value(model_code, session, custom_prices=params)
+                    # 2. 価値算定のための「検索用」の型式を作成
+                    lookup_model_code = None
+                    if original_model_code:
+                        temp_code = original_model_code.replace("カイ", "").replace("ｶｲ", "").strip()
+                        lookup_model_code = normalize_text(temp_code) # 例: "K13"
                     
-                    # 3. データをあなたのロジックでマージする
+                    # 3. 価値算定を試みる
+                    valuation = {}
+                    if lookup_model_code:
+                        valuation = estimate_scrap_value(lookup_model_code, session, custom_prices=params)
+                    else:
+                        valuation = {"error": "型式不明"}
+                    
                     db_info = valuation.get('vehicle_info', {})
                     calculated_values = valuation.copy()
                     calculated_values.pop('vehicle_info', None) 
                     
-                    # ▼▼▼ あなたの完璧なロジック「PDF -> DB -> PDF」▼▼▼
-                    # 1. PDFをベースにし
                     final_record = pdf_row_data.copy()
-                    # 2. DBの補足情報（重量など）で上書き（補完）し
                     final_record.update(db_info)
-                    # 3. 最後にPDFの主要情報（年式など）で再度上書きする
                     final_record.update(pdf_row_data)
-                    # 4. 算定した価値情報を追加する
                     final_record.update(calculated_values)
-                    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
+                    # ▼▼▼ 2. 「注目車種」の判定ロジックをここに追加 ▼▼▼
+                    is_target = (original_model_code in target_model_set) or \
+                                (lookup_model_code in target_model_set)
+                    final_record['is_target'] = is_target
+                    
                     # 過去相場と入札度のロジック
                     past_auction_price = random.randint(30000, 110000)
                     final_record['past_auction_price'] = past_auction_price
