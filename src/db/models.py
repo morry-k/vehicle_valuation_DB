@@ -56,3 +56,36 @@ class SalesHistory(SQLModel, table=True):
 class TargetModel(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     model_code: str = Field(unique=True, index=True)
+
+# ▼▼▼ スクレイピングした相場データ用のテーブル（再定義版） ▼▼▼
+class AuctionMarketData(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    
+    # --- 基本情報 ---
+    maker: str = Field(index=True)       # トヨタ
+    car_name: str = Field(index=True)    # アクア 5D 2WD
+    grade: Optional[str] = None          # Ｓスタイルブラック
+    model_code: str = Field(index=True)  # NHP10
+    year: int = Field(default=0)         # 2016 (年式)
+    
+    # --- スペック・装備 ---
+    displacement_cc: int = Field(default=0) # 1500
+    shift: Optional[str] = None             # ＡＴ
+    mileage: int = Field(default=0)         # 100 (単位はデータソースに準拠、例: 千km)
+    color: Optional[str] = None             # 紺
+    inspection: Optional[str] = None        # 8.2 (車検残)
+    equipment: Optional[str] = None         # AC NV TV AW SR 革
+    
+    # --- 状態・評価 ---
+    score: Optional[str] = None             # 4 - きれい
+    
+    # --- 価格情報 (万円) ---
+    # "37 ～ 42" のような範囲データを分割して保存
+    price_min: int = Field(default=0)       # 37
+    price_max: int = Field(default=0)       # 42
+    
+    # --- メタデータ ---
+    data_date: Optional[str] = None         # 2025年10月 (更新年月)
+    source_url: Optional[str] = None        # 取得元のURL（管理用）
+    
+    created_at: datetime = Field(default_factory=datetime.utcnow)

@@ -13,6 +13,8 @@ OUTPUT_DIR = DATA_DIR / "output"
 # ★★★ この行を追加 ▼▼▼
 # データベースファイルのパスを定義
 DB_PATH = DATA_DIR / "vehicle_database.db"
+# ★追加：市場相場用データベース（スクレイピングデータ）
+MARKET_DB_PATH = DATA_DIR / "market_data.db"
 # ★★★ ここまで追加 ▲▲▲
 
 # インプットファイルのパス
