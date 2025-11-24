@@ -7,7 +7,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 from playwright.sync_api import sync_playwright
 
 # ターゲットURL
-TARGET_URL = "https://www.aucsupport.com/soubalist.aspx?MAKER=%E3%83%88%E3%83%A8%E3%82%BF&CARNAME=%E3%82%A2%E3%82%AF%E3%82%A2&SYEAR=2010&EYEAR=2025"
+TARGET_URL = "https://www.aucsupport.com/searchsoubahand.aspx"
 
 def dump_table_html():
     print("🔍 HTML構造を解析するためにソースを保存します...")

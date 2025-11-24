@@ -12,7 +12,7 @@ from src.db.database import get_market_session
 from src.db.models import AuctionMarketData
 
 # --- 設定 ---
-TARGET_URL = "https://www.aucsupport.com/soubalist.aspx?MAKER=%E3%83%88%E3%83%A8%E3%82%BF&CARNAME=%E3%82%A2%E3%82%AF%E3%82%A2&SYEAR=2010&EYEAR=2025"
+TARGET_URL = "https://www.aucsupport.com/soubalist.aspx?MAKER=%e3%83%88%e3%83%a8%e3%82%bf&CARNAME=%e3%83%97%e3%83%ac%e3%83%9f%e3%82%aa&SYEAR=2015&EYEAR=2025"
 
 def parse_price_range(price_text):
     if not price_text: return 0, 0
