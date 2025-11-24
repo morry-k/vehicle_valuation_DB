@@ -7,7 +7,8 @@ import pandas as pd
 from datetime import datetime
 import japanize_matplotlib
 import random
-
+import traceback
+import re # ▼▼▼ この行を追加 ▼▼▼
 # プロジェクトのルートディレクトリをPythonの検索パスに追加
 # これにより、'src'フォルダをトップレベルとして認識できるようになる
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
@@ -24,6 +25,10 @@ from src.utils import normalize_text
 from src.estimate_value import estimate_scrap_value
 from src.db.database import SessionLocal
 from src.db.models import TargetModel # ★ TargetModelをインポート
+
+# ファイル上部でインポートを追加
+from src.db.database import SessionLocal, get_market_session
+from src.market_analysis import analyze_market_trends # ★追加
 
 class PDF(FPDF):
     def __init__(self, header_info=None, *args, **kwargs): # ← ★ 1. header_info を受け取る
@@ -95,7 +100,7 @@ def generate_report_pdf(results: list, header_info: dict) -> str: # ← ★引�
         ("出品番号", 18), ("メーカー", 18), ("車名", 37), ("グレード", 45), 
         ("年式", 10), ("型式", 25), ("排気量", 15), ("車検", 23), 
         ("走行", 12), ("シフト", 12), ("評価点", 12), ("総重量", 12),
-        ("E/G販売", 12), ("E/G価値", 12), ("素材価値", 12)
+        ("E/G販売", 12), ("E/G価値", 12), ("素材価値", 12),("過去相場", 18)
     ]
     
     # 枠線の色を薄いグレー(220, 220, 220)に設定
@@ -155,6 +160,7 @@ def generate_report_pdf(results: list, header_info: dict) -> str: # ← ★引�
             breakdown.get('エンジン部品販売', '×'),
             f"{breakdown.get('エンジン/ミッション', 0):,.0f}",
             f"{material_value:,.0f}",
+            f"{res.get('past_auction_price', 0):,.0f}", # ★過去相場
             '' # メモ欄
         ]
         
@@ -200,27 +206,25 @@ async def analyze_sheet_endpoint(file: UploadFile = File(...), params_str: str =
             
             results = []
             session = SessionLocal()
+            market_session = get_market_session()
             try:
-                # ▼▼▼ 1. 注目車種リストを「先」に読み込む ▼▼▼
                 target_models_query = session.query(TargetModel.model_code).all()
                 target_model_set = {code for (code,) in target_models_query}
                 
                 print(f"PDFから {len(df)} 件の車両を検出。価値算定を開始します...")
                 for index, row in df.iterrows():
                     
-                    # 1. まず、PDFから読み取った「生データ」を辞書にする
                     pdf_row_data = row.to_dict()
-                    original_model_code = pdf_row_data.get('model_code') # 例: "K13ｶｲ"
+                    original_model_code = pdf_row_data.get('model_code')
 
-                    # 2. 価値算定のための「検索用」の型式を作成
                     lookup_model_code = None
                     if original_model_code:
                         temp_code = original_model_code.replace("カイ", "").replace("ｶｲ", "").strip()
-                        lookup_model_code = normalize_text(temp_code) # 例: "K13"
+                        lookup_model_code = normalize_text(temp_code)
                     
-                    # 3. 価値算定を試みる
                     valuation = {}
                     if lookup_model_code:
+                        # 価値算定には検索用型式を渡す
                         valuation = estimate_scrap_value(lookup_model_code, session, custom_prices=params)
                     else:
                         valuation = {"error": "型式不明"}
@@ -229,34 +233,74 @@ async def analyze_sheet_endpoint(file: UploadFile = File(...), params_str: str =
                     calculated_values = valuation.copy()
                     calculated_values.pop('vehicle_info', None) 
                     
+                    # データを正しい順序でマージ
                     final_record = pdf_row_data.copy()
                     final_record.update(db_info)
                     final_record.update(pdf_row_data)
                     final_record.update(calculated_values)
 
-                    # ▼▼▼ 2. 「注目車種」の判定ロジックをここに追加 ▼▼▼
+                    # ▼▼▼ 修正点：年式と走行距離を「数値」として強制的に抽出 ▼▼▼
+                    target_year_str = final_record.get('year', '0')
+                    target_mileage_str = final_record.get('mileage_km', '0')
+                    
+                    # H27 -> 27 -> 2015 のような変換は、analyze_market_trends内で行うべきですが、
+                    # まずは純粋な数値だけを抽出します。
+                    try:
+                        target_year = int(re.sub(r"[^\d]", "", target_year_str))
+                        # 和暦 (H27) の場合は西暦に変換する（例として2000年代を仮定）
+                        if target_year < 100:
+                            target_year += 2000 # H27 -> 2027 (大まかな補正)
+                            
+                    except ValueError:
+                        target_year = 0
+                    
+                    try:
+                        target_mileage = int(re.sub(r"[^\d]", "", target_mileage_str))
+                    except ValueError:
+                        target_mileage = 0
+                    
+                    # --- デバッグログを追加して、変換結果を確認する ---
+                    print(f"Debug: Lookup Code: {lookup_model_code}, Converted Year: {target_year}, Converted Mileage: {target_mileage}")
+                    
+                    # 4. 市場相場とトレンドの算定
+                    market_info = {"market_price": 0, "trend_icon": "→", "sample_count": 0}
+
+                    if lookup_model_code and target_year > 0:
+                        market_info = analyze_market_trends(
+                            lookup_model_code, 
+                            target_year, 
+                            target_mileage, 
+                            market_session
+                        )
+
+
+                    past_auction_price = market_info["market_price"]
+                    final_record['past_auction_price'] = past_auction_price
+                    final_record['market_trend'] = market_info["trend_icon"] 
+
+                    # 注目車種判定
                     is_target = (original_model_code in target_model_set) or \
                                 (lookup_model_code in target_model_set)
                     final_record['is_target'] = is_target
-                    
-                    # 過去相場と入札度のロジック
-                    past_auction_price = random.randint(30000, 110000)
-                    final_record['past_auction_price'] = past_auction_price
+
+                    # 入札度ロジック
                     total_value = final_record.get('total_value', 0)
-                    diff = total_value - past_auction_price
-                    if total_value == 0:
+                    if total_value == 0 or past_auction_price == 0:
                         bidding_recommendation = "?"
-                    elif diff >= 10000:
-                        bidding_recommendation = "〇"
-                    elif diff > -10000:
-                        bidding_recommendation = "△"
                     else:
-                        bidding_recommendation = "×"
+                        diff = total_value - past_auction_price
+                        if diff >= 10000:
+                            bidding_recommendation = "〇"
+                        elif diff > -10000:
+                            bidding_recommendation = "△"
+                        else:
+                            bidding_recommendation = "×"
                     final_record['bidding_recommendation'] = bidding_recommendation
                     
                     results.append(final_record)
             finally:
                 session.close()
+                market_session.close() # ★市場セッションを閉じる
 
             output_pdf_path = generate_report_pdf(results, header_info)
             return FileResponse(output_pdf_path, media_type='application/pdf', filename="valuation_report.pdf")
