@@ -8,9 +8,9 @@ from datetime import datetime
 import japanize_matplotlib
 import random
 import traceback
-import re # ▼▼▼ この行を追加 ▼▼▼
+import re 
+
 # プロジェクトのルートディレクトリをPythonの検索パスに追加
-# これにより、'src'フォルダをトップレベルとして認識できるようになる
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 from fastapi import FastAPI, UploadFile, File, Form
@@ -18,24 +18,20 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fpdf import FPDF
 
-# --- ▼▼▼ インポートのパスをすべて src からに統一 ▼▼▼ ---
+# --- インポートのパスをすべて src からに統一 ---
 from src.config import VALUATION_PRICES
 from src.data_processing.pdf_parser import extract_vehicles_from_pdf
 from src.utils import normalize_text
 from src.estimate_value import estimate_scrap_value
-from src.db.database import SessionLocal
-from src.db.models import TargetModel # ★ TargetModelをインポート
-
-# ファイル上部でインポートを追加
-from src.db.database import SessionLocal, get_market_session
-from src.market_analysis import analyze_market_trends # ★追加
+from src.db.database import SessionLocal, get_market_session # ★市場DBセッション用
+from src.db.models import TargetModel
+from src.market_analysis import analyze_market_trends # ★相場分析ロジック
 
 class PDF(FPDF):
-    def __init__(self, header_info=None, *args, **kwargs): # ← ★ 1. header_info を受け取る
+    def __init__(self, header_info=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.header_info = header_info or {} # ← ★ 2. 受け取った情報をselfに保存
+        self.header_info = header_info or {}
         try:
-            # フォント設定は変更なし
             font_dir = os.path.dirname(japanize_matplotlib.__file__)
             font_path = os.path.join(font_dir, 'fonts', 'ipaexg.ttf')
             self.add_font('ipaexg', '', font_path, uni=True)
@@ -46,15 +42,13 @@ class PDF(FPDF):
             self.set_font('Arial', '', 12)
 
     def header(self):
-        # --- 受け取ったヘッダー情報を使って動的なタイトルを生成 ---
         title = self.header_info.get("auction_venue", "車両価値算定レポート")
         date = self.header_info.get("auction_date", "")
-        corner = self.header_info.get("auction_corner", "") # コーナー名を取得
+        corner = self.header_info.get("auction_corner", "")
         
         self.set_font('ipaexg', 'B', 15)
         self.cell(0, 10, title, 0, 1, 'C')
 
-        # 日付とコーナー名をサブタイトルとして表示
         subtitle = f"({date}開催分 / {corner}コーナー)" if date and corner else f"({date}開催分)" if date else ""
         if subtitle:
             self.set_font('ipaexg', '', 10)
@@ -69,10 +63,9 @@ class PDF(FPDF):
 
 
 app = FastAPI()
-# --- ▼▼▼ このCORS設定ブロックを修正 ▼▼▼ ---
 origins = [
-    "http://localhost:3000", # ローカル開発環境用
-    "https://vehicle-valuation-db.vercel.app", # Vercelの本番環境用
+    "http://localhost:3000",
+    "https://vehicle-valuation-db.vercel.app",
 ]
 app.add_middleware(
     CORSMiddleware,
@@ -82,9 +75,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def generate_report_pdf(results: list, header_info: dict) -> str: # ← ★引数に header_info を追加
+def generate_report_pdf(results: list, header_info: dict) -> str:
     """算定結果のリストから「最終版」の表形式PDFレポートを生成する"""
-    pdf = PDF(header_info=header_info, orientation='L') # PDFクラスにヘッダー情報を渡す
+    pdf = PDF(header_info=header_info, orientation='L')
     pdf.add_page()
 
     session = SessionLocal()
@@ -94,8 +87,7 @@ def generate_report_pdf(results: list, header_info: dict) -> str: # ← ★引�
     finally:
         session.close()
 
-    # ▼▼▼ headersリストの定義を修正 ▼▼▼
-    # 「色」を削除し、「総重量」「シフト」「評価点」を追加
+    # headersリスト
     headers = [
         ("出品番号", 18), ("メーカー", 18), ("車名", 37), ("グレード", 45), 
         ("年式", 10), ("型式", 25), ("排気量", 15), ("車検", 23), 
@@ -103,7 +95,6 @@ def generate_report_pdf(results: list, header_info: dict) -> str: # ← ★引�
         ("E/G販売", 12), ("E/G価値", 12), ("素材価値", 12),("過去相場", 18)
     ]
     
-    # 枠線の色を薄いグレー(220, 220, 220)に設定
     pdf.set_draw_color(160, 160, 160)
 
     pdf.set_font('ipaexg', 'B', 7)
@@ -127,8 +118,6 @@ def generate_report_pdf(results: list, header_info: dict) -> str: # ← ★引�
             breakdown.get('ハーネス (銅)', 0)
         )
         
-        # ▼▼▼ 判定ロジックを修正 ▼▼▼
-        # DBを検索する代わりに、resから判定結果を受け取る
         is_target = res.get('is_target', False)
 
         if is_target:
@@ -138,12 +127,10 @@ def generate_report_pdf(results: list, header_info: dict) -> str: # ← ★引�
             pdf.set_text_color(100, 100, 100)
             should_fill = True
         
-        # ▼▼▼ 2つの評価点を結合するロジックを追加 ▼▼▼
         score = res.get('evaluation_score', '')
         interior = res.get('evaluation_interior', '')
         evaluation_text = f"{score} / {interior}" if score and interior else score or interior
         
-        # ▼▼▼ row_dataリストの定義を修正 ▼▼▼
         row_data = [
             res.get('auction_no', ''),
             res.get('maker', ''),
@@ -179,7 +166,6 @@ def generate_report_pdf(results: list, header_info: dict) -> str: # ← ★引�
 @app.get("/api/parameters")
 def get_parameters():
     """フロントエンドに渡す、価値算定の基本パラメータを返す"""
-    # ▼▼▼ config.pyから返す値を、フロントエンドの表示項目と完全に一致させる ▼▼▼
     return {
         "engine_per_kg": VALUATION_PRICES.get("engine_per_kg", 0),
         "press_per_kg": VALUATION_PRICES.get("press_per_kg", 0),
@@ -187,7 +173,7 @@ def get_parameters():
         "harness_per_kg": VALUATION_PRICES.get("harness_per_kg", 0),
         "aluminum_wheels_price": VALUATION_PRICES.get("aluminum_wheels_price", 0),
         "catalyst_price": VALUATION_PRICES.get("catalyst_price", 0),
-        "transport_cost": 5000, # 輸送費は固定値として追加
+        "transport_cost": 5000,
     }
 
 @app.post("/api/analyze-sheet")
@@ -206,7 +192,7 @@ async def analyze_sheet_endpoint(file: UploadFile = File(...), params_str: str =
             
             results = []
             session = SessionLocal()
-            market_session = get_market_session()
+            market_session = get_market_session() # ★市場データDBセッション作成
             try:
                 target_models_query = session.query(TargetModel.model_code).all()
                 target_model_set = {code for (code,) in target_models_query}
@@ -224,7 +210,6 @@ async def analyze_sheet_endpoint(file: UploadFile = File(...), params_str: str =
                     
                     valuation = {}
                     if lookup_model_code:
-                        # 価値算定には検索用型式を渡す
                         valuation = estimate_scrap_value(lookup_model_code, session, custom_prices=params)
                     else:
                         valuation = {"error": "型式不明"}
@@ -239,43 +224,37 @@ async def analyze_sheet_endpoint(file: UploadFile = File(...), params_str: str =
                     final_record.update(pdf_row_data)
                     final_record.update(calculated_values)
 
-                    # ▼▼▼ 修正点：年式と走行距離を「数値」として強制的に抽出 ▼▼▼
+                    # ▼▼▼ 相場分析に必要な情報を抽出して変換 ▼▼▼
                     target_year_str = final_record.get('year', '0')
                     target_mileage_str = final_record.get('mileage_km', '0')
-                    
-                    # H27 -> 27 -> 2015 のような変換は、analyze_market_trends内で行うべきですが、
-                    # まずは純粋な数値だけを抽出します。
+                    target_score_str = final_record.get('evaluation_score', '0') # 評価点
+
                     try:
+                        # 年式: "H27" -> 2015 などの変換が必要だが、簡易的に数字のみ抽出
                         target_year = int(re.sub(r"[^\d]", "", target_year_str))
-                        # 和暦 (H27) の場合は西暦に変換する（例として2000年代を仮定）
-                        if target_year < 100:
-                            target_year += 2000 # H27 -> 2027 (大まかな補正)
-                            
-                    except ValueError:
+                        if target_year < 100 and target_year != 0:
+                            target_year += 2000 # 暫定補正 (本来は和暦変換が必要)
+                    except:
                         target_year = 0
                     
                     try:
                         target_mileage = int(re.sub(r"[^\d]", "", target_mileage_str))
-                    except ValueError:
+                    except:
                         target_mileage = 0
-                    
-                    # --- デバッグログを追加して、変換結果を確認する ---
-                    print(f"Debug: Lookup Code: {lookup_model_code}, Converted Year: {target_year}, Converted Mileage: {target_mileage}")
-                    
-                    # 4. 市場相場とトレンドの算定
-                    market_info = {"market_price": 0, "trend_icon": "→", "sample_count": 0}
 
+                    # ▼▼▼ 市場相場の分析実行 ▼▼▼
+                    market_info = {"market_price": 0, "trend_icon": "→", "sample_count": 0}
                     if lookup_model_code and target_year > 0:
                         market_info = analyze_market_trends(
                             lookup_model_code, 
                             target_year, 
                             target_mileage, 
-                            market_session
+                            target_score_str, # 評価点も渡す
+                            market_session    # 市場DBセッション
                         )
+                    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-
-                    past_auction_price = market_info["market_price"]
-                    final_record['past_auction_price'] = past_auction_price
+                    final_record['past_auction_price'] = market_info["market_price"]
                     final_record['market_trend'] = market_info["trend_icon"] 
 
                     # 注目車種判定
@@ -285,10 +264,12 @@ async def analyze_sheet_endpoint(file: UploadFile = File(...), params_str: str =
 
                     # 入札度ロジック
                     total_value = final_record.get('total_value', 0)
-                    if total_value == 0 or past_auction_price == 0:
+                    market_price = final_record.get('past_auction_price', 0)
+
+                    if total_value == 0 or market_price == 0:
                         bidding_recommendation = "?"
                     else:
-                        diff = total_value - past_auction_price
+                        diff = total_value - market_price
                         if diff >= 10000:
                             bidding_recommendation = "〇"
                         elif diff > -10000:
@@ -300,7 +281,7 @@ async def analyze_sheet_endpoint(file: UploadFile = File(...), params_str: str =
                     results.append(final_record)
             finally:
                 session.close()
-                market_session.close() # ★市場セッションを閉じる
+                market_session.close() # ★忘れずにクローズ
 
             output_pdf_path = generate_report_pdf(results, header_info)
             return FileResponse(output_pdf_path, media_type='application/pdf', filename="valuation_report.pdf")
